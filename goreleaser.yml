@@ -1,0 +1,13 @@
+build:
+  binary: webinc
+  goos:
+    - windows
+    - darwin
+    - linux
+  goarch:
+    - amd64
+  ldflags: -s -w
+archive:
+  format_overrides:
+    - goos: windows
+      format: zip
