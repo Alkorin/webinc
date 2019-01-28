@@ -187,21 +187,23 @@ func NewKMS(device *Device, mercury *Mercury) (*KMS, error) {
 
 func (k *KMS) RegisterKey(kid string, key jose.JSONWebKey) {
 	k.keysMutex.Lock()
-	defer k.keysMutex.Unlock()
 	k.keys[kid] = key
+	k.keysMutex.Unlock()
 }
 
 func (k *KMS) GetKey(kid string) (jose.JSONWebKey, error) {
+	logger := k.logger.WithField("func", "GetKey").WithField("kid", kid)
+	logger.Trace("Request key")
+
 	k.keysMutex.RLock()
 	if key, ok := k.keys[kid]; ok {
+		logger.Trace("Found in cache")
 		k.keysMutex.RUnlock()
 		return key, nil
 	}
 	k.keysMutex.RUnlock()
 
-	logger := k.logger.WithField(kid, "kid")
-
-	// Request key to KMS
+	// Not found, request key to KMS
 	kmsRequest := KmsRequest{
 		URI:       kid,
 		Method:    "retrieve",
@@ -211,7 +213,7 @@ func (k *KMS) GetKey(kid string) (jose.JSONWebKey, error) {
 	kmsRequest.Client.Credential.UserId = k.device.UserID
 	kmsRequest.Client.Credential.Bearer = k.device.Token
 
-	logger.Trace("Request key")
+	logger.Trace("Fetch key")
 	resp, err := k.SendRequest(k.cluster, k.ephemeralKey, kmsRequest)
 	if err != nil {
 		return jose.JSONWebKey{}, errors.Wrap(err, "failed to send key request")

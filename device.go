@@ -19,9 +19,12 @@ type Device struct {
 	Url          string
 	UserID       string
 	Services     map[string]string
+
+	logger *log.Entry
 }
 
 func NewDevice(token string) (*Device, error) {
+	logger := log.WithField("type", "Device")
 	deviceRegisterRequest, err := json.Marshal(struct {
 		DeviceName     string `json:"deviceName"`
 		DeviceType     string `json:"deviceType"`
@@ -51,7 +54,7 @@ func NewDevice(token string) (*Device, error) {
 	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("Content-Type", "application/json")
 
-	log.Trace("Device> Create device")
+	logger.Trace("Create device")
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create device")
@@ -72,7 +75,11 @@ func NewDevice(token string) (*Device, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to unmarshal device info")
 	}
+	logger = logger.WithField("device", device)
+	logger.Trace("Device created")
+
 	device.Token = token
+	device.logger = logger
 
 	return &device, nil
 }
