@@ -5,10 +5,6 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func init() {
-	log.SetLevel(log.DebugLevel)
-}
-
 func main() {
 	configstore.File("webinc.conf")
 	config := configstore.Filter().Squash()
@@ -16,6 +12,17 @@ func main() {
 	token, err := config.MustGetItem("auth-token").Value()
 	if err != nil {
 		log.WithError(err).Fatal("Missing auth-token in webinc.conf")
+	}
+
+	logLevelString, err := config.MustGetItem("log-level").Value()
+	if err == nil {
+		logLevel, err := log.ParseLevel(logLevelString)
+		if err != nil {
+			log.WithError(err).Fatal("Invalid log-level")
+		}
+		log.SetLevel(logLevel)
+	} else {
+		log.SetLevel(log.InfoLevel)
 	}
 
 	// Register Device
@@ -43,6 +50,8 @@ func main() {
 
 	// Message Handler
 	NewConversation(mercury, kms)
+
+	log.Info("Ready")
 
 	//Infinite wait
 	select {}
