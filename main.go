@@ -49,7 +49,7 @@ func main() {
 	log.Debug("Done")
 
 	// Message Handler
-	NewConversation(mercury, kms)
+	NewConversation(device, mercury, kms)
 
 	log.Info("Ready")
 
