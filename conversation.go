@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -23,7 +24,25 @@ type Conversation struct {
 }
 
 type Space struct {
-	DisplayName string
+	Id            string
+	EncryptionKey jose.JSONWebKey
+	DisplayName   string
+	Participants  []string
+
+	conversation *Conversation
+}
+
+type RawSpace struct {
+	Id               string
+	DisplayName      string
+	EncryptionKeyUrl string
+
+	Participants struct {
+		Items []struct {
+			DisplayName string
+			EntryUUID   string
+		}
+	}
 }
 
 func NewConversation(device *Device, mercury *Mercury, kms *KMS) *Conversation {
@@ -36,6 +55,10 @@ func NewConversation(device *Device, mercury *Mercury, kms *KMS) *Conversation {
 	}
 
 	mercury.RegisterHandler("conversation.activity", c.ParseActivity)
+
+	// Fetch current spaces
+	go c.FetchAllSpaces()
+
 	return c
 }
 
@@ -52,6 +75,7 @@ func (c *Conversation) ParseActivity(msg []byte) {
 	logger = logger.WithField("activity", mercuryConversationActivity)
 	switch mercuryConversationActivity.Data.Activity.Verb {
 	case "post":
+		logger.Trace("Post in space")
 		encryptedDisplayName, err := jose.ParseEncrypted(mercuryConversationActivity.Data.Activity.Object.DisplayName)
 		if err != nil {
 			logger.WithError(err).Error("Failed to parse object displayname")
@@ -84,12 +108,71 @@ func (c *Conversation) ParseActivity(msg []byte) {
 		logger.Trace("New space")
 	case "create":
 		logger.Trace("New space")
+	case "leave":
+		logger.Trace("Leave space")
 	case "hide":
 		logger.Trace("Leave space")
+	case "update":
+		logger.Trace("Update space")
+		encryptedDisplayName, err := jose.ParseEncrypted(mercuryConversationActivity.Data.Activity.Object.DisplayName)
+		if err != nil {
+			logger.WithError(err).Error("Failed to parse object displayname")
+			return
+		}
+		logger.Trace("Get space")
+		space, err := c.GetSpace(mercuryConversationActivity.Data.Activity.Target.Id)
+		if err != nil {
+			logger.WithError(err).Error("Failed to fetch space")
+		}
+
+		displayName, err := encryptedDisplayName.Decrypt(space.EncryptionKey)
+		if err != nil {
+			logger.WithError(err).Error("Failed to decrypt display name")
+			return
+		}
+		space.DisplayName = string(displayName)
 	case "acknowledge":
 		logger.Trace("Space marked as read")
 	default:
 		logger.Error("Unhandled verb")
+	}
+}
+
+func (c *Conversation) FetchAllSpaces() {
+	logger := c.logger.WithField("func", "FetchAllSpaces")
+
+	// Fetch spaces
+	request, err := http.NewRequest("GET", c.device.Services["conversationServiceUrl"]+"/conversations", nil)
+	if err != nil {
+		logger.WithError(err).Error("Failed to create conversation request")
+		return
+	}
+	request.Header.Set("Authorization", "Bearer "+c.device.Token)
+
+	logger.Trace("Request conversations")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		logger.WithError(err).Error("Failed to fetch conversations")
+		return
+	}
+	defer response.Body.Close()
+
+	var r struct {
+		Items []RawSpace
+	}
+	err = json.NewDecoder(response.Body).Decode(&r)
+	if err != nil {
+		logger.WithError(err).Error("Failed to unmarshal conversations")
+		return
+	}
+
+	for _, i := range r.Items {
+		logger := logger.WithField("rawSpace", i)
+		_, err := c.AddSpace(i)
+		if err != nil {
+			logger.WithError(err).Error("Failed to add space")
+			continue
+		}
 	}
 }
 
@@ -116,41 +199,81 @@ func (c *Conversation) GetSpace(uuid string) (*Space, error) {
 	}
 	defer response.Body.Close()
 
-	var conversationInfos struct {
-		DisplayName      string
-		EncryptionKeyUrl string
-	}
-	err = json.NewDecoder(response.Body).Decode(&conversationInfos)
+	var r RawSpace
+	err = json.NewDecoder(response.Body).Decode(&r)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to unmarshal conversation Infos")
+		return nil, errors.Wrap(err, "failed to fetch conversation")
 	}
+
+	return c.AddSpace(r)
+}
+
+func (c *Conversation) AddSpace(r RawSpace) (*Space, error) {
+	logger := c.logger.WithField("func", "AddSpace").WithField("rawSpace", r)
 
 	// Fetch conversation key
-	logger = logger.WithField("kid", conversationInfos.EncryptionKeyUrl)
-
-	logger.Trace("Request key")
-	key, err := c.kms.GetKey(conversationInfos.EncryptionKeyUrl)
+	logger = logger.WithField("kid", r.EncryptionKeyUrl)
+	key, err := c.kms.GetKey(r.EncryptionKeyUrl)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to fech decryption key")
 	}
 
-	// Decrypt DisplayName
-	encryptedDisplayName, err := jose.ParseEncrypted(conversationInfos.DisplayName)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse object displayname")
-	}
-	displayName, err := encryptedDisplayName.Decrypt(key)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to decrypt display name")
+	space := &Space{
+		Id:            r.Id,
+		EncryptionKey: key,
+
+		conversation: c,
 	}
 
-	space := Space{
-		DisplayName: string(displayName),
-	}
-
+	// Store & Update space
 	c.spacesMutex.Lock()
-	c.spaces[uuid] = &space
-	c.spacesMutex.Unlock()
+	if s, ok := c.spaces[space.Id]; !ok {
+		c.spaces[space.Id] = space
+		c.spacesMutex.Unlock()
+		space.Update(r)
+		return space, nil
+	} else {
+		// Space already exists, return current
+		c.spacesMutex.Unlock()
+		return s, nil
+	}
+}
 
-	return &space, nil
+func (s *Space) Update(r RawSpace) {
+	logger := s.conversation.logger.WithField("func", "Update").WithField("rawSpace", r)
+	newParticipants := []string{}
+	// (Other) Participants
+	for _, v := range r.Participants.Items {
+		if v.EntryUUID == s.conversation.device.UserID {
+			continue
+		}
+		newParticipants = append(newParticipants, v.DisplayName)
+	}
+	s.Participants = newParticipants
+
+	// DisplayName
+	if r.DisplayName != "" {
+		if strings.Count(r.DisplayName, ".") == 4 {
+			// DisplayName is encrypted
+			encryptedDisplayName, err := jose.ParseEncrypted(r.DisplayName)
+			if err == nil {
+				displayName, err := encryptedDisplayName.Decrypt(s.EncryptionKey)
+				if err == nil {
+					s.DisplayName = string(displayName)
+				} else {
+					logger.WithError(err).Error("Failed to decrypt display name")
+				}
+			} else {
+				logger.WithError(err).Error("Failed to decrypt display name")
+			}
+		}
+		// Failed to decrypt, keep value
+		if s.DisplayName == "" {
+			s.DisplayName = r.DisplayName
+		}
+	} else {
+		// No DisplayName, use participants
+		s.DisplayName = strings.Join(s.Participants, ", ")
+	}
+	return
 }
