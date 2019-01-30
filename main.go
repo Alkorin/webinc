@@ -1,9 +1,18 @@
 package main
 
 import (
+	"os"
+
 	"github.com/ovh/configstore"
 	log "github.com/sirupsen/logrus"
 )
+
+func init() {
+	log.SetFormatter(&log.TextFormatter{
+		FullTimestamp: true,
+	})
+	log.SetOutput(os.Stderr)
+}
 
 func main() {
 	configstore.File("webinc.conf")
