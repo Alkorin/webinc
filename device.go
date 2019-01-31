@@ -91,6 +91,7 @@ func (d *Device) RequestService(method string, service string, url string, data 
 		return nil, errors.Wrap(err, "failed to create kms http request")
 	}
 	httpRequest.Header.Set("Authorization", "Bearer "+d.Token)
+	httpRequest.Header.Set("Content-type", "application/json")
 
 	return http.DefaultClient.Do(httpRequest)
 }
