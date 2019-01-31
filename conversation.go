@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 	"sync"
 
@@ -142,15 +141,8 @@ func (c *Conversation) FetchAllSpaces() {
 	logger := c.logger.WithField("func", "FetchAllSpaces")
 
 	// Fetch spaces
-	request, err := http.NewRequest("GET", c.device.Services["conversationServiceUrl"]+"/conversations", nil)
-	if err != nil {
-		logger.WithError(err).Error("Failed to create conversation request")
-		return
-	}
-	request.Header.Set("Authorization", "Bearer "+c.device.Token)
-
 	logger.Trace("Request conversations")
-	response, err := http.DefaultClient.Do(request)
+	response, err := c.device.RequestService("GET", "conversationServiceUrl", "/conversations", nil)
 	if err != nil {
 		logger.WithError(err).Error("Failed to fetch conversations")
 		return
@@ -186,14 +178,8 @@ func (c *Conversation) GetSpace(uuid string) (*Space, error) {
 	c.spacesMutex.RUnlock()
 
 	// Fetch conversation
-	request, err := http.NewRequest("GET", c.device.Services["conversationServiceUrl"]+"/conversations/"+uuid, nil)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create conversation request")
-	}
-	request.Header.Set("Authorization", "Bearer "+c.device.Token)
-
 	logger.Trace("Request conversation")
-	response, err := http.DefaultClient.Do(request)
+	response, err := c.device.RequestService("GET", "conversationServiceUrl", "/conversations/"+uuid, nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to fetch conversation")
 	}
