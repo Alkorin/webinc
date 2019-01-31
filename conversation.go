@@ -74,34 +74,21 @@ func (c *Conversation) ParseActivity(msg []byte) {
 	logger = logger.WithField("activity", mercuryConversationActivity)
 	switch mercuryConversationActivity.Data.Activity.Verb {
 	case "post":
+		logger = logger.WithField("space", mercuryConversationActivity.Data.Activity.Target.Id)
 		logger.Trace("Post in space")
-		encryptedDisplayName, err := jose.ParseEncrypted(mercuryConversationActivity.Data.Activity.Object.DisplayName)
-		if err != nil {
-			logger.WithError(err).Error("Failed to parse object displayname")
-			return
-		}
-		kid := mercuryConversationActivity.Data.Activity.EncryptionKeyUrl
-		logger = logger.WithField("kid", kid).WithField("space", mercuryConversationActivity.Data.Activity.Target.Id)
 
-		logger.Trace("Request key")
-		key, err := c.kms.GetKey(kid)
+		space, err := c.GetSpace(mercuryConversationActivity.Data.Activity.Target.Id)
 		if err != nil {
-			logger.WithError(err).Error("Failed to fech decryption key")
+			logger.WithError(err).Error("Failed to get space")
 			return
 		}
 
-		logger.Trace("Got key")
-		displayName, err := encryptedDisplayName.Decrypt(key)
+		displayName, err := space.Decrypt(mercuryConversationActivity.Data.Activity.Object.DisplayName)
 		if err != nil {
 			logger.WithError(err).Error("Failed to decrypt display name")
 			return
 		}
 
-		logger.Trace("Get space")
-		space, err := c.GetSpace(mercuryConversationActivity.Data.Activity.Target.Id)
-		if err != nil {
-			logger.WithError(err).Error("Failed to fetch space")
-		}
 		fmt.Printf("%s> %s - %s\n", space.DisplayName, mercuryConversationActivity.Data.Activity.Actor.Id, displayName)
 	case "add":
 		logger.Trace("New space")
@@ -112,23 +99,21 @@ func (c *Conversation) ParseActivity(msg []byte) {
 	case "hide":
 		logger.Trace("Leave space")
 	case "update":
+		logger = logger.WithField("space", mercuryConversationActivity.Data.Activity.Target.Id)
 		logger.Trace("Update space")
-		encryptedDisplayName, err := jose.ParseEncrypted(mercuryConversationActivity.Data.Activity.Object.DisplayName)
-		if err != nil {
-			logger.WithError(err).Error("Failed to parse object displayname")
-			return
-		}
-		logger.Trace("Get space")
+
 		space, err := c.GetSpace(mercuryConversationActivity.Data.Activity.Target.Id)
 		if err != nil {
-			logger.WithError(err).Error("Failed to fetch space")
+			logger.WithError(err).Error("Failed to get space")
+			return
 		}
 
-		displayName, err := encryptedDisplayName.Decrypt(space.EncryptionKey)
+		displayName, err := space.Decrypt(mercuryConversationActivity.Data.Activity.Object.DisplayName)
 		if err != nil {
 			logger.WithError(err).Error("Failed to decrypt display name")
 			return
 		}
+
 		space.DisplayName = string(displayName)
 	case "acknowledge":
 		logger.Trace("Space marked as read")
@@ -241,25 +226,31 @@ func (s *Space) Update(r RawSpace) {
 	if r.DisplayName != "" {
 		if strings.Count(r.DisplayName, ".") == 4 {
 			// DisplayName is encrypted
-			encryptedDisplayName, err := jose.ParseEncrypted(r.DisplayName)
+			displayName, err := s.Decrypt(r.DisplayName)
 			if err == nil {
-				displayName, err := encryptedDisplayName.Decrypt(s.EncryptionKey)
-				if err == nil {
-					s.DisplayName = string(displayName)
-				} else {
-					logger.WithError(err).Error("Failed to decrypt display name")
-				}
+				s.DisplayName = string(displayName)
 			} else {
 				logger.WithError(err).Error("Failed to decrypt display name")
+				// Failed to decrypt, keep value
+				s.DisplayName = r.DisplayName
 			}
-		}
-		// Failed to decrypt, keep value
-		if s.DisplayName == "" {
-			s.DisplayName = r.DisplayName
 		}
 	} else {
 		// No DisplayName, use participants
 		s.DisplayName = strings.Join(s.Participants, ", ")
 	}
 	return
+}
+
+func (s *Space) Decrypt(encryptedString string) ([]byte, error) {
+	encryptedObject, err := jose.ParseEncrypted(encryptedString)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to parse encrypted message")
+	}
+
+	decrypted, err := encryptedObject.Decrypt(s.EncryptionKey)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to decrypt message")
+	}
+	return decrypted, nil
 }
