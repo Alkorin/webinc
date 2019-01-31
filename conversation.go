@@ -1,11 +1,15 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"strings"
 	"sync"
 
+	"github.com/gofrs/uuid"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	jose "gopkg.in/square/go-jose.v2"
@@ -24,15 +28,18 @@ type Conversation struct {
 
 type Space struct {
 	Id            string
+	Url           string
 	EncryptionKey jose.JSONWebKey
 	DisplayName   string
 	Participants  []string
 
 	conversation *Conversation
+	logger       *log.Entry
 }
 
 type RawSpace struct {
 	Id               string
+	Url              string
 	DisplayName      string
 	EncryptionKeyUrl string
 
@@ -191,9 +198,11 @@ func (c *Conversation) AddSpace(r RawSpace) (*Space, error) {
 
 	space := &Space{
 		Id:            r.Id,
+		Url:           r.Url,
 		EncryptionKey: key,
 
 		conversation: c,
+		logger:       c.logger.WithField("spaceId", r.Id),
 	}
 
 	// Store & Update space
@@ -242,6 +251,60 @@ func (s *Space) Update(r RawSpace) {
 	return
 }
 
+func (s *Space) SendMessage(msg string) error {
+	logger := s.logger.WithField("func", "SendMessage")
+
+	encryptedMessage, err := s.Encrypt([]byte(msg))
+	if err != nil {
+		return errors.Wrap(err, "failed to encrypt message")
+	}
+
+	activity := struct {
+		ClientTempId     string `json:"clientTempId"`
+		EncryptionKeyUrl string `json:"encryptionKeyUrl"`
+		ObjectType       string `json:"objectType"`
+		Object           struct {
+			DisplayName string `json:"displayName"`
+			ObjectType  string `json:"objectType"`
+		} `json:"object"`
+		Target struct {
+			Id         string `json:"id"`
+			ObjectType string `json:"objectType"`
+		} `json:"target"`
+		Verb string `json:"verb"`
+	}{
+		ClientTempId:     uuid.Must(uuid.NewV4()).String(),
+		EncryptionKeyUrl: s.EncryptionKey.KeyID,
+		ObjectType:       "activity",
+		Verb:             "post",
+	}
+	activity.Object.DisplayName = encryptedMessage
+	activity.Object.ObjectType = "comment"
+	activity.Target.Id = s.Id
+	activity.Target.ObjectType = "conversation"
+
+	data, err := json.Marshal(activity)
+	if err != nil {
+		return errors.Wrap(err, "failed to marshal activity")
+	}
+
+	logger.Trace("Send message")
+	response, err := s.conversation.device.RequestService("POST", "conversationServiceUrl", "/activities", bytes.NewReader(data))
+	if err != nil {
+		return errors.Wrap(err, "failed to create request")
+	}
+
+	if response.StatusCode != http.StatusOK {
+		responseError, err := ioutil.ReadAll(response.Body)
+		if err != nil {
+			return errors.Wrap(err, "failed to read error response")
+		}
+		return errors.Errorf("failed to send message: %s", responseError)
+	}
+
+	return nil
+}
+
 func (s *Space) Decrypt(encryptedString string) ([]byte, error) {
 	encryptedObject, err := jose.ParseEncrypted(encryptedString)
 	if err != nil {
@@ -253,4 +316,18 @@ func (s *Space) Decrypt(encryptedString string) ([]byte, error) {
 		return nil, errors.Wrap(err, "failed to decrypt message")
 	}
 	return decrypted, nil
+}
+
+func (s *Space) Encrypt(data []byte) (string, error) {
+	encrypter, err := jose.NewEncrypter(jose.A256GCM, jose.Recipient{Algorithm: jose.DIRECT, Key: s.EncryptionKey}, nil)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to create jose encrypter")
+	}
+
+	object, err := encrypter.Encrypt(data)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to encrypt kms request")
+	}
+
+	return object.CompactSerialize()
 }
