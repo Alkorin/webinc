@@ -42,6 +42,7 @@ type RawSpace struct {
 	Url              string
 	DisplayName      string
 	EncryptionKeyUrl string
+	Tags             []string
 
 	Participants struct {
 		Items []struct {
@@ -150,9 +151,16 @@ func (c *Conversation) FetchAllSpaces() {
 		return
 	}
 
-	for _, i := range r.Items {
-		logger := logger.WithField("rawSpace", i)
-		_, err := c.AddSpace(i)
+spaces:
+	for _, space := range r.Items {
+		logger := logger.WithField("rawSpace", space)
+		for _, v := range space.Tags {
+			if v == "HIDDEN" {
+				continue spaces
+			}
+		}
+
+		_, err := c.AddSpace(space)
 		if err != nil {
 			logger.WithError(err).Error("Failed to add space")
 			continue
@@ -243,6 +251,9 @@ func (s *Space) Update(r RawSpace) {
 				// Failed to decrypt, keep value
 				s.DisplayName = r.DisplayName
 			}
+		} else {
+			// Doesn't looks like JWE, keep value
+			s.DisplayName = r.DisplayName
 		}
 	} else {
 		// No DisplayName, use participants
