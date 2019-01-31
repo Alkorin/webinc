@@ -91,14 +91,8 @@ func NewKMS(device *Device, mercury *Mercury) (*KMS, error) {
 	mercury.RegisterHandler("encryption.kms_message", kms.ParseMercuryEncryptionMessage)
 
 	// Request KMS StaticPubKey
-	requestPubKey, err := http.NewRequest("GET", device.Services["encryptionServiceUrl"]+"/kms/"+device.UserID, nil)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create KMS static public key request")
-	}
-	requestPubKey.Header.Set("Authorization", "Bearer "+device.Token)
-
 	kms.logger.Trace("Request public key")
-	responsePubKey, err := http.DefaultClient.Do(requestPubKey)
+	responsePubKey, err := device.RequestService("GET", "encryptionServiceUrl", "/kms/"+device.UserID, nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to request KMS static public key")
 	}
@@ -259,6 +253,7 @@ func (k *KMS) GetDeferredHandler(name string) chan<- []byte {
 }
 
 func (k *KMS) SendRequest(cluster string, key jose.JSONWebKey, request KmsRequest) ([]byte, error) {
+	logger := k.logger.WithField("func", "SendRequest")
 	encryptedRequest, err := request.Encrypt(key)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to encrypt request")
@@ -273,13 +268,8 @@ func (k *KMS) SendRequest(cluster string, key jose.JSONWebKey, request KmsReques
 	}
 
 	waitingChan := k.CreateDeferredHandler(request.RequestId)
-	httpRequest, err := http.NewRequest("POST", k.device.Services["encryptionServiceUrl"]+"/kms/messages", bytes.NewReader(batchRequestJson))
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create kms http request")
-	}
-	httpRequest.Header.Set("Authorization", "Bearer "+k.device.Token)
-
-	httpResponse, err := http.DefaultClient.Do(httpRequest)
+	logger.Trace("Send KMS Request")
+	httpResponse, err := k.device.RequestService("POST", "encryptionServiceUrl", "/kms/messages", bytes.NewReader(batchRequestJson))
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to send kms http request")
 	}

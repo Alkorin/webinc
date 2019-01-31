@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 
 	"io/ioutil"
@@ -82,4 +83,14 @@ func NewDevice(token string) (*Device, error) {
 	device.logger = logger
 
 	return &device, nil
+}
+
+func (d *Device) RequestService(method string, service string, url string, data io.Reader) (*http.Response, error) {
+	httpRequest, err := http.NewRequest(method, d.Services[service]+url, data)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create kms http request")
+	}
+	httpRequest.Header.Set("Authorization", "Bearer "+d.Token)
+
+	return http.DefaultClient.Do(httpRequest)
 }
