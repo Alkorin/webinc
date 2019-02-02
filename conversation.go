@@ -23,15 +23,35 @@ type Conversation struct {
 	spaces      map[string]*Space
 	spacesMutex sync.RWMutex
 
+	teams      map[string]*Team
+	teamsMutex sync.RWMutex
+
 	logger *log.Entry
+}
+
+type SpaceTags []string
+
+func (s SpaceTags) Contains(tag string) bool {
+	for _, v := range s {
+		if v == tag {
+			return true
+		}
+	}
+	return false
+}
+
+type Team struct {
+	Id          string
+	DisplayName string
 }
 
 type Space struct {
 	Id            string
-	Url           string
 	EncryptionKey jose.JSONWebKey
 	DisplayName   string
 	Participants  []string
+	Tags          SpaceTags
+	Team          *Team
 
 	conversation *Conversation
 	logger       *log.Entry
@@ -39,16 +59,19 @@ type Space struct {
 
 type RawSpace struct {
 	Id               string
-	Url              string
 	DisplayName      string
 	EncryptionKeyUrl string
-	Tags             []string
+	Tags             SpaceTags
 
 	Participants struct {
 		Items []struct {
 			DisplayName string
 			EntryUUID   string
 		}
+	}
+
+	Team struct {
+		Id string
 	}
 }
 
@@ -58,6 +81,7 @@ func NewConversation(device *Device, mercury *Mercury, kms *KMS) *Conversation {
 		mercury: mercury,
 		kms:     kms,
 		spaces:  make(map[string]*Space),
+		teams:   make(map[string]*Team),
 		logger:  log.WithField("type", "Conversation"),
 	}
 
@@ -151,13 +175,10 @@ func (c *Conversation) FetchAllSpaces() {
 		return
 	}
 
-spaces:
 	for _, space := range r.Items {
 		logger := logger.WithField("rawSpace", space)
-		for _, v := range space.Tags {
-			if v == "HIDDEN" {
-				continue spaces
-			}
+		if space.Tags.Contains("HIDDEN") {
+			continue
 		}
 
 		_, err := c.AddSpace(space)
@@ -196,6 +217,7 @@ func (c *Conversation) GetSpace(uuid string) (*Space, error) {
 
 func (c *Conversation) AddSpace(r RawSpace) (*Space, error) {
 	logger := c.logger.WithField("func", "AddSpace").WithField("rawSpace", r)
+	logger.Trace("Adding space")
 
 	// Fetch conversation key
 	logger = logger.WithField("kid", r.EncryptionKeyUrl)
@@ -206,8 +228,8 @@ func (c *Conversation) AddSpace(r RawSpace) (*Space, error) {
 
 	space := &Space{
 		Id:            r.Id,
-		Url:           r.Url,
 		EncryptionKey: key,
+		Tags:          r.Tags,
 
 		conversation: c,
 		logger:       c.logger.WithField("spaceId", r.Id),
@@ -229,8 +251,19 @@ func (c *Conversation) AddSpace(r RawSpace) (*Space, error) {
 
 func (s *Space) Update(r RawSpace) {
 	logger := s.conversation.logger.WithField("func", "Update").WithField("rawSpace", r)
-	newParticipants := []string{}
+	// Team ?
+	if r.Team.Id != "" {
+		logger = logger.WithField("teamId", r.Team.Id)
+		team, err := s.conversation.GetTeam(r.Team.Id)
+		if err != nil {
+			logger.WithError(err).Error("Failed to get team infos")
+		} else {
+			s.Team = team
+		}
+	}
+
 	// (Other) Participants
+	newParticipants := []string{}
 	for _, v := range r.Participants.Items {
 		if v.EntryUUID == s.conversation.device.UserID {
 			continue
@@ -240,7 +273,9 @@ func (s *Space) Update(r RawSpace) {
 	s.Participants = newParticipants
 
 	// DisplayName
-	if r.DisplayName != "" {
+	if s.Tags.Contains("TEAM") {
+		s.DisplayName = "General"
+	} else if r.DisplayName != "" {
 		if strings.Count(r.DisplayName, ".") == 4 {
 			// DisplayName is encrypted
 			displayName, err := s.Decrypt(r.DisplayName)
@@ -341,4 +376,61 @@ func (s *Space) Encrypt(data []byte) (string, error) {
 	}
 
 	return object.CompactSerialize()
+}
+
+func (c *Conversation) GetTeam(uuid string) (*Team, error) {
+	logger := c.logger.WithField("func", "GetTeam").WithField("uuid", uuid)
+	c.teamsMutex.RLock()
+	if team, ok := c.teams[uuid]; ok {
+		c.teamsMutex.RUnlock()
+		return team, nil
+	}
+	c.teamsMutex.RUnlock()
+
+	// Fetch Team
+	logger.Trace("Request Team")
+	response, err := c.device.RequestService("GET", "conversationServiceUrl", "/teams/"+uuid, nil)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to fetch team")
+	}
+	defer response.Body.Close()
+
+	var rawTeam struct {
+		Id               string
+		EncryptionKeyUrl string
+		DisplayName      string
+	}
+	err = json.NewDecoder(response.Body).Decode(&rawTeam)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to fetch unmarshal team")
+	}
+	logger = logger.WithField("rawTeam", rawTeam)
+	logger.Trace("Got team")
+
+	encryptedDisplayName, err := jose.ParseEncrypted(rawTeam.DisplayName)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to parse encrypted message")
+	}
+
+	key, err := c.kms.GetKey(rawTeam.EncryptionKeyUrl)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to fetch encryption key")
+	}
+
+	displayName, err := encryptedDisplayName.Decrypt(key)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to decrypt message")
+	}
+
+	team := &Team{
+		Id:          rawTeam.Id,
+		DisplayName: string(displayName),
+	}
+
+	// Store
+	c.teamsMutex.Lock()
+	c.teams[uuid] = team
+	c.teamsMutex.Unlock()
+
+	return team, nil
 }
