@@ -407,19 +407,9 @@ func (c *Conversation) GetTeam(uuid string) (*Team, error) {
 	logger = logger.WithField("rawTeam", rawTeam)
 	logger.Trace("Got team")
 
-	encryptedDisplayName, err := jose.ParseEncrypted(rawTeam.DisplayName)
+	displayName, err := c.kms.Decrypt(rawTeam.DisplayName, rawTeam.EncryptionKeyUrl)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse encrypted message")
-	}
-
-	key, err := c.kms.GetKey(rawTeam.EncryptionKeyUrl)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to fetch encryption key")
-	}
-
-	displayName, err := encryptedDisplayName.Decrypt(key)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to decrypt message")
+		return nil, errors.Wrap(err, "failed to decrypt displayName")
 	}
 
 	team := &Team{

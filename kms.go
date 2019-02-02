@@ -389,3 +389,22 @@ func (k *KMS) ParseMercuryEncryptionMessage(msg []byte) {
 		}
 	}
 }
+
+func (k *KMS) Decrypt(data string, keyUrl string) ([]byte, error) {
+	encryptedObject, err := jose.ParseEncrypted(data)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to parse encrypted message")
+	}
+
+	key, err := k.GetKey(keyUrl)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to fetch encryption key")
+	}
+
+	plain, err := encryptedObject.Decrypt(key)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to decrypt message")
+	}
+
+	return plain, nil
+}
