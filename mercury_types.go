@@ -31,19 +31,6 @@ type MercuryEncryptionKmsMessage struct {
 
 type MercuryConversationActivity struct {
 	Data struct {
-		Activity struct {
-			Verb  string
-			Actor struct {
-				Id string
-			}
-			Target struct {
-				Url string
-				Id  string
-			}
-			Object struct {
-				DisplayName string
-			}
-			EncryptionKeyUrl string
-		}
+		Activity Activity
 	}
 }

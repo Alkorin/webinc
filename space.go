@@ -31,6 +31,7 @@ type Space struct {
 	Participants  []string
 	Tags          SpaceTags
 	Team          *Team
+	Activities    []*Activity
 
 	conversation *Conversation
 	logger       *log.Entry
@@ -181,4 +182,15 @@ func (s *Space) Encrypt(data []byte) (string, error) {
 	}
 
 	return object.CompactSerialize()
+}
+
+func (s *Space) AddActivity(a Activity) *Activity {
+	displayName, err := s.Decrypt(a.Object.DisplayName)
+	if err != nil {
+		s.logger.WithError(err).Error("Failed to decrypt display name")
+	} else {
+		a.Object.DisplayName = string(displayName)
+	}
+	s.Activities = append(s.Activities, &a)
+	return &a
 }

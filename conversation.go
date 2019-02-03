@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -19,6 +18,9 @@ type Conversation struct {
 
 	teams      map[string]*Team
 	teamsMutex sync.RWMutex
+
+	newSpaceEventHandlers    []func(*Space)
+	newActivityEventHandlers []func(*Space, *Activity)
 
 	logger *log.Entry
 }
@@ -68,17 +70,21 @@ func (c *Conversation) ParseActivity(msg []byte) {
 			return
 		}
 
-		displayName, err := space.Decrypt(mercuryConversationActivity.Data.Activity.Object.DisplayName)
-		if err != nil {
-			logger.WithError(err).Error("Failed to decrypt display name")
-			return
-		}
+		a := space.AddActivity(mercuryConversationActivity.Data.Activity)
 
-		fmt.Printf("%s> %s - %s\n", space.DisplayName, mercuryConversationActivity.Data.Activity.Actor.Id, displayName)
+		for _, f := range c.newActivityEventHandlers {
+			f(space, a)
+		}
 	case "add":
 		logger.Trace("New space")
 	case "create":
+		logger = logger.WithField("space", mercuryConversationActivity.Data.Activity.Object.Id)
 		logger.Trace("New space")
+		_, err := c.GetSpace(mercuryConversationActivity.Data.Activity.Object.Id)
+		if err != nil {
+			logger.WithError(err).Error("Failed to get space")
+			return
+		}
 	case "leave":
 		logger.Trace("Leave space")
 	case "hide":
@@ -194,6 +200,10 @@ func (c *Conversation) AddSpace(r RawSpace) (*Space, error) {
 		c.spaces[space.Id] = space
 		c.spacesMutex.Unlock()
 		space.Update(r)
+		// Events
+		for _, f := range c.newSpaceEventHandlers {
+			f(space)
+		}
 		return space, nil
 	} else {
 		// Space already exists, return current
@@ -247,4 +257,12 @@ func (c *Conversation) GetTeam(uuid string) (*Team, error) {
 	c.teamsMutex.Unlock()
 
 	return team, nil
+}
+
+func (c *Conversation) AddNewSpaceEventHandler(f func(*Space)) {
+	c.newSpaceEventHandlers = append(c.newSpaceEventHandlers, f)
+}
+
+func (c *Conversation) AddNewActivityEventHandler(f func(*Space, *Activity)) {
+	c.newActivityEventHandlers = append(c.newActivityEventHandlers, f)
 }
