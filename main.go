@@ -62,10 +62,13 @@ func main() {
 	log.Debug("Done")
 
 	// Message Handler
-	NewConversation(device, mercury, kms)
+	c := NewConversation(device, mercury, kms)
 
-	log.Info("Ready")
+	// Start GUI
+	g, err := NewGoCUI(c)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	//Infinite wait
-	select {}
+	g.Start()
 }
