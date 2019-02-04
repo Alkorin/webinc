@@ -168,6 +168,9 @@ func (gui *GoCUI) sendMessage(g *gocui.Gui, v *gocui.View) error {
 					gui.moveToSpace(i - 1)
 				}
 			}
+			if strings.HasPrefix(msg[1:], "create ") {
+				gui.conversation.CreateSpace(msg[8:])
+			}
 			// Unknown command
 		} else {
 			gui.spacesList[gui.currentSpaceIndex].SendMessage(msg)

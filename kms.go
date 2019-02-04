@@ -49,6 +49,8 @@ type KmsRequest struct {
 	} `json:"client"`
 	RequestId string           `json:"requestId"`
 	JWK       *jose.JSONWebKey `json:"jwk,omitempty"`
+	Count     int              `json:"count,omitempty"`
+	KeyUris   []string         `json:"keyUris,omitempty"`
 }
 
 type KmsBatchRequest struct {
@@ -216,6 +218,47 @@ func (k *KMS) GetKey(kid string) (jose.JSONWebKey, error) {
 	return kmsKey.Key.Jwk, nil
 }
 
+func (k *KMS) CreateKey() (jose.JSONWebKey, error) {
+	logger := k.logger.WithField("func", "CreateKey")
+	logger.Trace("Create key")
+
+	kmsRequest := KmsRequest{
+		URI:       "/keys",
+		Method:    "create",
+		RequestId: uuid.Must(uuid.NewV4()).String(),
+		Count:     1,
+	}
+	kmsRequest.Client.ClientId = k.device.Url
+	kmsRequest.Client.Credential.UserId = k.device.UserID
+	kmsRequest.Client.Credential.Bearer = k.device.Token
+
+	resp, err := k.SendRequest(k.cluster, k.ephemeralKey, kmsRequest)
+	if err != nil {
+		return jose.JSONWebKey{}, errors.Wrap(err, "failed to send key request")
+	}
+
+	logger.Trace("Received key")
+
+	var kmsKeys struct {
+		Keys []struct {
+			Uri string
+			Jwk jose.JSONWebKey
+		}
+	}
+
+	err = json.Unmarshal(resp, &kmsKeys)
+	if err != nil {
+		return jose.JSONWebKey{}, errors.Wrap(err, "failed to unmarshal kms key response")
+	}
+
+	if len(kmsKeys.Keys) != 1 {
+		return jose.JSONWebKey{}, errors.Wrap(err, "wrong number of key received")
+	}
+
+	k.RegisterKey(kmsKeys.Keys[0].Uri, kmsKeys.Keys[0].Jwk)
+	return kmsKeys.Keys[0].Jwk, nil
+}
+
 func (k *KMS) CreateDeferredHandler(name string) <-chan []byte {
 	k.pendingEventsMutex.Lock()
 	defer k.pendingEventsMutex.Unlock()
@@ -270,6 +313,23 @@ func (k *KMS) SendRequest(cluster string, key jose.JSONWebKey, request KmsReques
 
 	kmsResponse := <-waitingChan
 	return kmsResponse, nil
+}
+
+func (k *KMS) NewResourceCreateMessage(keys ...jose.JSONWebKey) (string, error) {
+	kmsRequest := KmsRequest{
+		URI:    "/resources",
+		Method: "create",
+	}
+
+	for _, v := range keys {
+		kmsRequest.KeyUris = append(kmsRequest.KeyUris, v.KeyID)
+	}
+
+	kmsRequest.Client.ClientId = k.device.Url
+	kmsRequest.Client.Credential.UserId = k.device.UserID
+	kmsRequest.Client.Credential.Bearer = k.device.Token
+
+	return kmsRequest.Encrypt(k.ephemeralKey)
 }
 
 func (k *KMS) ParseMercuryEncryptionMessage(msg []byte) {
