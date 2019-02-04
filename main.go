@@ -11,14 +11,16 @@ func init() {
 	log.SetFormatter(&log.TextFormatter{
 		FullTimestamp: true,
 	})
+}
+
+func main() {
 	file, err := os.OpenFile("webinc.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Fatal(err)
 	}
 	log.SetOutput(file)
-}
+	log.AddHook(NewFatalHook())
 
-func main() {
 	configstore.File("webinc.conf")
 	config := configstore.Filter().Squash()
 
