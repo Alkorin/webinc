@@ -62,22 +62,7 @@ func (k *KmsRequest) Encrypt(key jose.JSONWebKey) (string, error) {
 		return "", errors.Wrap(err, "failed to marshal request")
 	}
 
-	alg := jose.DIRECT
-	if _, ok := key.Key.(*rsa.PublicKey); ok {
-		alg = jose.RSA_OAEP
-	}
-
-	encrypter, err := jose.NewEncrypter(jose.A256GCM, jose.Recipient{Algorithm: alg, Key: &key}, nil)
-	if err != nil {
-		return "", errors.Wrap(err, "failed to create jose encrypter")
-	}
-
-	object, err := encrypter.Encrypt(data)
-	if err != nil {
-		return "", errors.Wrap(err, "failed to encrypt kms request")
-	}
-
-	return object.CompactSerialize()
+	return EncryptWithKey(data, key)
 }
 
 func NewKMS(device *Device, mercury *Mercury) (*KMS, error) {
@@ -390,15 +375,46 @@ func (k *KMS) ParseMercuryEncryptionMessage(msg []byte) {
 	}
 }
 
-func (k *KMS) Decrypt(data string, keyUrl string) ([]byte, error) {
-	encryptedObject, err := jose.ParseEncrypted(data)
+func (k *KMS) Encrypt(data []byte, keyUrl string) (string, error) {
+	key, err := k.GetKey(keyUrl)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse encrypted message")
+		return "", errors.Wrap(err, "failed to fetch encryption key")
 	}
 
+	return EncryptWithKey(data, key)
+}
+
+func (k *KMS) Decrypt(data string, keyUrl string) ([]byte, error) {
 	key, err := k.GetKey(keyUrl)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to fetch encryption key")
+	}
+	return DecryptWithKey(data, key)
+}
+
+func EncryptWithKey(data []byte, key jose.JSONWebKey) (string, error) {
+	alg := jose.DIRECT
+	if _, ok := key.Key.(*rsa.PublicKey); ok {
+		alg = jose.RSA_OAEP
+	}
+
+	encrypter, err := jose.NewEncrypter(jose.A256GCM, jose.Recipient{Algorithm: alg, Key: &key}, nil)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to create jose encrypter")
+	}
+
+	object, err := encrypter.Encrypt(data)
+	if err != nil {
+		return "", errors.Wrap(err, "failed to encrypt kms request")
+	}
+
+	return object.CompactSerialize()
+}
+
+func DecryptWithKey(data string, key jose.JSONWebKey) ([]byte, error) {
+	encryptedObject, err := jose.ParseEncrypted(data)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to parse encrypted message")
 	}
 
 	plain, err := encryptedObject.Decrypt(key)
