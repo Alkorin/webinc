@@ -216,7 +216,7 @@ func (gui *GoCUI) updateMessages() {
 		space := gui.spacesList[gui.currentSpaceIndex]
 		for _, a := range space.Activities {
 			if a.Verb == "post" {
-				fmt.Fprintf(v, "%s %s> %s\n", a.Published.Format("15:04:05"), a.Actor.Id, a.Object.DisplayName)
+				fmt.Fprintf(v, "%s %s> %s\n", a.Published.Format("15:04:05"), a.Actor.DisplayName, a.Object.DisplayName)
 			}
 		}
 

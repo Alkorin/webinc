@@ -8,7 +8,8 @@ type Activity struct {
 	Verb      string
 	Published time.Time
 	Actor     struct {
-		Id string
+		Id          string
+		DisplayName string
 	}
 	Target struct {
 		Url string
