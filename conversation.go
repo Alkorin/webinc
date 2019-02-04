@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"io/ioutil"
+	"net/http"
 	"sync"
 
 	"github.com/pkg/errors"
@@ -265,4 +268,105 @@ func (c *Conversation) AddNewSpaceEventHandler(f func(*Space)) {
 
 func (c *Conversation) AddNewActivityEventHandler(f func(*Space, *Activity)) {
 	c.newActivityEventHandlers = append(c.newActivityEventHandlers, f)
+}
+
+func (c *Conversation) CreateSpace(name string) {
+	logger := c.logger.WithField("func", "CreateSpace").WithField("spaceName", name)
+
+	// Create a new encryption key
+	key, err := c.kms.CreateKey()
+	if err != nil {
+		logger.WithError(err).Error("Failed to create space encryption key")
+		return
+	}
+
+	encryptedName, err := EncryptWithKey([]byte(name), key)
+	if err != nil {
+		logger.WithError(err).Error("Failed to encrypt space name")
+		return
+	}
+
+	// Create a KMS request
+	kmsMessage, err := c.kms.NewResourceCreateMessage(key)
+	if err != nil {
+		logger.WithError(err).Error("Failed create new ressource KMS message")
+		return
+	}
+
+	// Forge request
+	type newSpaceActivityObject struct {
+		Id         string `json:"id"`
+		ObjectType string `json:"objectType"`
+	}
+
+	type newSpaceActivity struct {
+		Verb       string                  `json:"verb"`
+		ObjectType string                  `json:"objectType"`
+		Actor      newSpaceActivityObject  `json:"actor"`
+		Object     *newSpaceActivityObject `json:"object,omitempty"`
+	}
+
+	newSpace := struct {
+		Activities struct {
+			Items []newSpaceActivity `json:"items"`
+		} `json:"activities"`
+		DefaultActivityEncryptionKeyUrl string `json:"defaultActivityEncryptionKeyUrl"`
+		DisplayName                     string `json:"displayName"`
+		EncryptionKeyUrl                string `json:"encryptionKeyUrl"`
+		ObjectType                      string `json:"objectType"`
+		KmsMessage                      string `json:"kmsMessage"`
+	}{
+		DefaultActivityEncryptionKeyUrl: key.KeyID,
+		DisplayName:                     encryptedName,
+		EncryptionKeyUrl:                key.KeyID,
+		ObjectType:                      "conversation",
+		KmsMessage:                      kmsMessage,
+	}
+
+	newSpace.Activities.Items = []newSpaceActivity{
+		{
+			Verb:       "create",
+			ObjectType: "activity",
+			Actor: newSpaceActivityObject{
+				ObjectType: "person",
+				Id:         c.device.UserID,
+			},
+		},
+		{
+			Verb:       "add",
+			ObjectType: "activity",
+			Actor: newSpaceActivityObject{
+				ObjectType: "person",
+				Id:         c.device.UserID,
+			},
+			Object: &newSpaceActivityObject{
+				ObjectType: "person",
+				Id:         c.device.UserID,
+			},
+		},
+	}
+
+	data, err := json.Marshal(newSpace)
+	if err != nil {
+		logger.WithError(err).Error("Failed to marshal new space request")
+		return
+	}
+
+	response, err := c.device.RequestService("POST", "conversationServiceUrl", "/conversations", bytes.NewReader(data))
+	if err != nil {
+		logger.WithError(err).Error("Failed to request space creation")
+		return
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		responseError, err := ioutil.ReadAll(response.Body)
+		if err != nil {
+			logger.WithError(err).Error("Failed to read error response")
+			return
+		}
+
+		logger.Errorf("Failed to request ace creation: %s", responseError)
+		return
+	}
 }
