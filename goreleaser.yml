@@ -6,7 +6,8 @@ build:
     - linux
   goarch:
     - amd64
-  ldflags: -s -w
+  ldflags:
+    - -s -w -X main.version={{.Version}}-{{.ShortCommit}}
 archive:
   format_overrides:
     - goos: windows
