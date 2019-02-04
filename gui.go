@@ -216,7 +216,9 @@ func (gui *GoCUI) updateMessages() {
 		if err != nil {
 			return err
 		}
+
 		v.Clear()
+		v.SetOrigin(0, 0)
 
 		space := gui.spacesList[gui.currentSpaceIndex]
 		for _, a := range space.Activities {
