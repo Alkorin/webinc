@@ -130,16 +130,21 @@ func (gui *GoCUI) moveToSpace(i int) {
 	gui.spacesMutex.RLock()
 	defer gui.spacesMutex.RUnlock()
 
-	if i >= 0 && i < len(gui.spacesList) {
-		gui.currentSpaceIndex = i
-		// Reset flags
-		gui.spacesList[i].NewMessage = false
-		gui.spacesList[i].Highlight = false
-		// Refresh
-		gui.updateSpaceStatus()
-		gui.updateSpaceList()
-		gui.updateMessages()
+	// Wrap
+	if i < 0 {
+		i = len(gui.spacesList) - 1
+	} else if i >= len(gui.spacesList) {
+		i = 0
 	}
+
+	gui.currentSpaceIndex = i
+	// Reset flags
+	gui.spacesList[i].NewMessage = false
+	gui.spacesList[i].Highlight = false
+	// Refresh
+	gui.updateSpaceStatus()
+	gui.updateSpaceList()
+	gui.updateMessages()
 }
 
 func (gui *GoCUI) sendMessage(g *gocui.Gui, v *gocui.View) error {
