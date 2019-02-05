@@ -25,10 +25,10 @@ type KMS struct {
 	device       *Device
 	mercury      *Mercury
 	cluster      string
-	publicKey    jose.JSONWebKey
-	ephemeralKey jose.JSONWebKey
+	publicKey    *jose.JSONWebKey
+	ephemeralKey *jose.JSONWebKey
 
-	keys      map[string]jose.JSONWebKey
+	keys      map[string]*jose.JSONWebKey
 	keysMutex sync.RWMutex
 
 	pendingEvents      map[string]chan<- []byte
@@ -58,7 +58,7 @@ type KmsBatchRequest struct {
 	KmsMessages []string `json:"kmsMessages"`
 }
 
-func (k *KmsRequest) Encrypt(key jose.JSONWebKey) (string, error) {
+func (k *KmsRequest) Encrypt(key *jose.JSONWebKey) (string, error) {
 	data, err := json.Marshal(k)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to marshal request")
@@ -71,7 +71,7 @@ func NewKMS(device *Device, mercury *Mercury) (*KMS, error) {
 	kms := &KMS{
 		device:        device,
 		mercury:       mercury,
-		keys:          make(map[string]jose.JSONWebKey),
+		keys:          make(map[string]*jose.JSONWebKey),
 		pendingEvents: make(map[string]chan<- []byte),
 		logger:        log.WithField("type", "KMS"),
 	}
@@ -107,12 +107,13 @@ func NewKMS(device *Device, mercury *Mercury) (*KMS, error) {
 	kms.cluster = kmsInfos.KmsCluster
 
 	// Parse PublicKey
-	err = kms.publicKey.UnmarshalJSON([]byte(kmsInfos.RsaPublicKey))
+	var key jose.JSONWebKey
+	err = key.UnmarshalJSON([]byte(kmsInfos.RsaPublicKey))
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to unmarshal KMS public key")
 	}
 
-	kms.RegisterKey(kms.publicKey.KeyID, kms.publicKey)
+	kms.publicKey = kms.RegisterKey(key.KeyID, key)
 
 	// Generate ECDHE key
 	localEcdhKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -160,19 +161,20 @@ func NewKMS(device *Device, mercury *Mercury) (*KMS, error) {
 	hkdf.New(sha256.New, x.Bytes(), nil, nil).Read(k)
 	sharedKey := jose.JSONWebKey{KeyID: kmsEcdhMessage.Key.Uri, Key: k}
 
-	kms.ephemeralKey = sharedKey
-	kms.RegisterKey(kmsEcdhMessage.Key.Uri, sharedKey)
+	kms.ephemeralKey = kms.RegisterKey(kmsEcdhMessage.Key.Uri, sharedKey)
 
 	return kms, nil
 }
 
-func (k *KMS) RegisterKey(kid string, key jose.JSONWebKey) {
+func (k *KMS) RegisterKey(kid string, key jose.JSONWebKey) *jose.JSONWebKey {
 	k.keysMutex.Lock()
-	k.keys[kid] = key
+	k.keys[kid] = &key
 	k.keysMutex.Unlock()
+
+	return &key
 }
 
-func (k *KMS) GetKey(kid string) (jose.JSONWebKey, error) {
+func (k *KMS) GetKey(kid string) (*jose.JSONWebKey, error) {
 	logger := k.logger.WithField("func", "GetKey").WithField("kid", kid)
 	logger.Trace("Request key")
 
@@ -197,7 +199,7 @@ func (k *KMS) GetKey(kid string) (jose.JSONWebKey, error) {
 	logger.Trace("Fetch key")
 	resp, err := k.SendRequest(k.cluster, k.ephemeralKey, kmsRequest)
 	if err != nil {
-		return jose.JSONWebKey{}, errors.Wrap(err, "failed to send key request")
+		return nil, errors.Wrap(err, "failed to send key request")
 	}
 
 	logger.Trace("Received key")
@@ -211,14 +213,14 @@ func (k *KMS) GetKey(kid string) (jose.JSONWebKey, error) {
 
 	err = json.Unmarshal(resp, &kmsKey)
 	if err != nil {
-		return jose.JSONWebKey{}, errors.Wrap(err, "failed to unmarshal kms key response")
+		return nil, errors.Wrap(err, "failed to unmarshal kms key response")
 	}
 
-	k.RegisterKey(kmsKey.Key.Uri, kmsKey.Key.Jwk)
-	return kmsKey.Key.Jwk, nil
+	key := k.RegisterKey(kmsKey.Key.Uri, kmsKey.Key.Jwk)
+	return key, nil
 }
 
-func (k *KMS) CreateKey() (jose.JSONWebKey, error) {
+func (k *KMS) CreateKey() (*jose.JSONWebKey, error) {
 	logger := k.logger.WithField("func", "CreateKey")
 	logger.Trace("Create key")
 
@@ -234,7 +236,7 @@ func (k *KMS) CreateKey() (jose.JSONWebKey, error) {
 
 	resp, err := k.SendRequest(k.cluster, k.ephemeralKey, kmsRequest)
 	if err != nil {
-		return jose.JSONWebKey{}, errors.Wrap(err, "failed to send key request")
+		return nil, errors.Wrap(err, "failed to send key request")
 	}
 
 	logger.Trace("Received key")
@@ -248,15 +250,15 @@ func (k *KMS) CreateKey() (jose.JSONWebKey, error) {
 
 	err = json.Unmarshal(resp, &kmsKeys)
 	if err != nil {
-		return jose.JSONWebKey{}, errors.Wrap(err, "failed to unmarshal kms key response")
+		return nil, errors.Wrap(err, "failed to unmarshal kms key response")
 	}
 
 	if len(kmsKeys.Keys) != 1 {
-		return jose.JSONWebKey{}, errors.Wrap(err, "wrong number of key received")
+		return nil, errors.Wrap(err, "wrong number of key received")
 	}
 
-	k.RegisterKey(kmsKeys.Keys[0].Uri, kmsKeys.Keys[0].Jwk)
-	return kmsKeys.Keys[0].Jwk, nil
+	key := k.RegisterKey(kmsKeys.Keys[0].Uri, kmsKeys.Keys[0].Jwk)
+	return key, nil
 }
 
 func (k *KMS) CreateDeferredHandler(name string) <-chan []byte {
@@ -280,7 +282,7 @@ func (k *KMS) GetDeferredHandler(name string) chan<- []byte {
 	return nil
 }
 
-func (k *KMS) SendRequest(cluster string, key jose.JSONWebKey, request KmsRequest) ([]byte, error) {
+func (k *KMS) SendRequest(cluster string, key *jose.JSONWebKey, request KmsRequest) ([]byte, error) {
 	logger := k.logger.WithField("func", "SendRequest")
 	encryptedRequest, err := request.Encrypt(key)
 	if err != nil {
@@ -315,7 +317,7 @@ func (k *KMS) SendRequest(cluster string, key jose.JSONWebKey, request KmsReques
 	return kmsResponse, nil
 }
 
-func (k *KMS) NewResourceCreateMessage(keys ...jose.JSONWebKey) (string, error) {
+func (k *KMS) NewResourceCreateMessage(keys ...*jose.JSONWebKey) (string, error) {
 	kmsRequest := KmsRequest{
 		URI:    "/resources",
 		Method: "create",
@@ -452,13 +454,13 @@ func (k *KMS) Decrypt(data string, keyUrl string) ([]byte, error) {
 	return DecryptWithKey(data, key)
 }
 
-func EncryptWithKey(data []byte, key jose.JSONWebKey) (string, error) {
+func EncryptWithKey(data []byte, key *jose.JSONWebKey) (string, error) {
 	alg := jose.DIRECT
 	if _, ok := key.Key.(*rsa.PublicKey); ok {
 		alg = jose.RSA_OAEP
 	}
 
-	encrypter, err := jose.NewEncrypter(jose.A256GCM, jose.Recipient{Algorithm: alg, Key: &key}, nil)
+	encrypter, err := jose.NewEncrypter(jose.A256GCM, jose.Recipient{Algorithm: alg, Key: key}, nil)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to create jose encrypter")
 	}
@@ -471,7 +473,7 @@ func EncryptWithKey(data []byte, key jose.JSONWebKey) (string, error) {
 	return object.CompactSerialize()
 }
 
-func DecryptWithKey(data string, key jose.JSONWebKey) ([]byte, error) {
+func DecryptWithKey(data string, key *jose.JSONWebKey) ([]byte, error) {
 	encryptedObject, err := jose.ParseEncrypted(data)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to parse encrypted message")
