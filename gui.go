@@ -166,6 +166,15 @@ func (gui *GoCUI) sendMessage(g *gocui.Gui, v *gocui.View) error {
 				i, err := strconv.Atoi(msg[5:])
 				if err == nil && i > 0 && i <= len(gui.spacesList) {
 					gui.moveToSpace(i - 1)
+				} else {
+					// Try to find a space with a matching name
+					toSearch := strings.ToLower(msg[5:])
+					for i, v := range gui.spacesList {
+						if strings.Contains(strings.ToLower(v.DisplayName()), toSearch) {
+							gui.moveToSpace(i)
+							break
+						}
+					}
 				}
 			}
 			if strings.HasPrefix(msg[1:], "create ") {
