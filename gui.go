@@ -74,6 +74,9 @@ func (gui *GoCUI) NewSpaceHandler(s *Space) {
 	gui.spacesMutex.Unlock()
 
 	gui.updateSpaceList()
+	if len(gui.spacesList) == 1 {
+		gui.updateMessages()
+	}
 }
 
 func (gui *GoCUI) NewActivityHandler(s *Space, a *Activity) {
