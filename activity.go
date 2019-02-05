@@ -23,6 +23,7 @@ type Activity struct {
 				Id string
 			}
 		}
+		ContentCategory string
 	}
 	EncryptionKeyUrl string
 }

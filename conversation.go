@@ -63,8 +63,8 @@ func (c *Conversation) ParseActivity(msg []byte) {
 
 	logger = logger.WithField("activity", mercuryConversationActivity)
 	switch mercuryConversationActivity.Data.Activity.Verb {
-	case "post":
-		logger = logger.WithField("space", mercuryConversationActivity.Data.Activity.Target.Id)
+	case "post", "share":
+		logger = logger.WithField("space", mercuryConversationActivity.Data.Activity.Target.Id).WithField("verb", mercuryConversationActivity.Data.Activity.Verb)
 		logger.Trace("Post in space")
 
 		space, err := c.GetSpace(mercuryConversationActivity.Data.Activity.Target.Id)
