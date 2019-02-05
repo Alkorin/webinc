@@ -26,13 +26,14 @@ func (s SpaceTags) Contains(tag string) bool {
 }
 
 type Space struct {
-	Id            string
-	EncryptionKey jose.JSONWebKey
-	DisplayName   string
-	Participants  []string
-	Tags          SpaceTags
-	Team          *Team
-	Activities    []*Activity
+	Id                           string
+	EncryptionKey                *jose.JSONWebKey
+	DefaultActivityEncryptionKey *jose.JSONWebKey
+	DisplayName                  string
+	Participants                 []string
+	Tags                         SpaceTags
+	Team                         *Team
+	Activities                   []*Activity
 
 	conversation    *Conversation
 	logger          *log.Entry
@@ -41,10 +42,11 @@ type Space struct {
 }
 
 type RawSpace struct {
-	Id               string
-	DisplayName      string
-	EncryptionKeyUrl string
-	Tags             SpaceTags
+	Id                              string
+	DisplayName                     string
+	EncryptionKeyUrl                string
+	DefaultActivityEncryptionKeyUrl string
+	Tags                            SpaceTags
 
 	Participants struct {
 		Items []struct {
@@ -87,7 +89,9 @@ func (s *Space) Update(r RawSpace) {
 
 	// Activities
 	for _, v := range r.Activities.Items {
-		s.AddActivity(v)
+		if v.Verb == "post" || v.Verb == "share" {
+			s.AddActivity(v)
+		}
 	}
 
 	// DisplayName
@@ -118,7 +122,7 @@ func (s *Space) Update(r RawSpace) {
 func (s *Space) SendMessage(msg string) error {
 	logger := s.logger.WithField("func", "SendMessage")
 
-	encryptedMessage, err := s.Encrypt([]byte(msg))
+	encryptedMessage, err := s.EncryptActivity([]byte(msg))
 	if err != nil {
 		return errors.Wrap(err, "failed to encrypt message")
 	}
@@ -175,15 +179,20 @@ func (s *Space) Decrypt(encryptedString string) ([]byte, error) {
 		return nil, errors.Wrap(err, "failed to parse encrypted message")
 	}
 
-	decrypted, err := encryptedObject.Decrypt(s.EncryptionKey)
+	key := s.EncryptionKey
+	if key == nil {
+		key = s.DefaultActivityEncryptionKey
+	}
+
+	decrypted, err := encryptedObject.Decrypt(key)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to decrypt message")
 	}
 	return decrypted, nil
 }
 
-func (s *Space) Encrypt(data []byte) (string, error) {
-	encrypter, err := jose.NewEncrypter(jose.A256GCM, jose.Recipient{Algorithm: jose.DIRECT, Key: s.EncryptionKey}, nil)
+func (s *Space) EncryptActivity(data []byte) (string, error) {
+	encrypter, err := jose.NewEncrypter(jose.A256GCM, jose.Recipient{Algorithm: jose.DIRECT, Key: s.DefaultActivityEncryptionKey}, nil)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to create jose encrypter")
 	}
@@ -197,6 +206,8 @@ func (s *Space) Encrypt(data []byte) (string, error) {
 }
 
 func (s *Space) AddActivity(a Activity) *Activity {
+	logger := s.logger.WithField("func", "AddActivity").WithField("activity", a)
+
 	s.activitiesMutex.Lock()
 	defer s.activitiesMutex.Unlock()
 
@@ -205,12 +216,14 @@ func (s *Space) AddActivity(a Activity) *Activity {
 		return a
 	}
 
-	// Decrypt name
-	displayName, err := s.Decrypt(a.Object.DisplayName)
-	if err != nil {
-		s.logger.WithError(err).Error("Failed to decrypt display name")
-	} else {
-		a.Object.DisplayName = string(displayName)
+	// Decrypt name if defined
+	if a.Object.DisplayName != "" {
+		displayName, err := s.Decrypt(a.Object.DisplayName)
+		if err != nil {
+			logger.WithError(err).Error("Failed to decrypt display name")
+		} else {
+			a.Object.DisplayName = string(displayName)
+		}
 	}
 
 	// Insert at the end and see if we need to move the data

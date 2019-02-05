@@ -181,21 +181,29 @@ func (c *Conversation) AddSpace(r RawSpace) (*Space, error) {
 	logger := c.logger.WithField("func", "AddSpace").WithField("rawSpace", r)
 	logger.Trace("Adding space")
 
-	// Fetch conversation key
-	logger = logger.WithField("kid", r.EncryptionKeyUrl)
-	key, err := c.kms.GetKey(r.EncryptionKeyUrl)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to fech decryption key")
-	}
-
 	space := &Space{
-		Id:            r.Id,
-		EncryptionKey: key,
-		Tags:          r.Tags,
+		Id:   r.Id,
+		Tags: r.Tags,
 
 		conversation:  c,
 		activitiesMap: make(map[string]*Activity),
-		logger:        c.logger.WithField("spaceId", r.Id),
+		logger:        c.logger.WithField("type", "Space").WithField("spaceId", r.Id),
+	}
+
+	// Prefetch keys
+	if r.EncryptionKeyUrl != "" {
+		key, err := c.kms.GetKey(r.EncryptionKeyUrl)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to fech decryption key")
+		}
+		space.EncryptionKey = key
+	}
+	if r.DefaultActivityEncryptionKeyUrl != "" {
+		key, err := c.kms.GetKey(r.DefaultActivityEncryptionKeyUrl)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to fech decryption key")
+		}
+		space.DefaultActivityEncryptionKey = key
 	}
 
 	// Store & Update space
