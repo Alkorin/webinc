@@ -80,7 +80,7 @@ func (gui *GoCUI) NewActivityHandler(s *Space, a *Activity) {
 	gui.spacesMutex.RLock()
 	defer gui.spacesMutex.RUnlock()
 
-	if a.Verb == "post" {
+	if a.Verb == "post" || a.Verb == "share" {
 		spaceIndex := gui.spacesMap[s.Id]
 		if spaceIndex != gui.currentSpaceIndex {
 			gui.spacesList[spaceIndex].NewMessage = true
@@ -236,6 +236,11 @@ func (gui *GoCUI) updateMessages() {
 		for _, a := range space.Activities {
 			if a.Verb == "post" {
 				fmt.Fprintf(v, "%s %s> %s\n", a.Published.Format("15:04:05"), a.Actor.DisplayName, a.Object.DisplayName)
+			} else if a.Verb == "share" {
+				fmt.Fprintf(v, "%s %s has shared a content of type %q\n", a.Published.Format("15:04:05"), a.Actor.DisplayName, a.Object.ContentCategory)
+				if a.Object.DisplayName != "" {
+					fmt.Fprintf(v, "%s %s> %s\n", a.Published.Format("15:04:05"), a.Actor.DisplayName, a.Object.DisplayName)
+				}
 			}
 		}
 
