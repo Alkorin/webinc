@@ -113,7 +113,13 @@ func (gui *GoCUI) keybindings(g *gocui.Gui) error {
 	if err := g.SetKeybinding("", gocui.KeyCtrlP, gocui.ModNone, gui.previousSpace); err != nil {
 		return err
 	}
-	if err := g.SetKeybinding("", gocui.KeyEnter, gocui.ModNone, gui.sendMessage); err != nil {
+	if err := g.SetKeybinding("cmd", gocui.KeyEnter, gocui.ModNone, gui.sendMessage); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("help", gocui.KeyEnter, gocui.ModNone, gui.hideHelp); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("cmd", gocui.KeyCtrlH, gocui.ModNone, gui.showHelp); err != nil {
 		return err
 	}
 	return nil
@@ -126,6 +132,20 @@ func (gui *GoCUI) nextSpace(g *gocui.Gui, v *gocui.View) error {
 
 func (gui *GoCUI) previousSpace(g *gocui.Gui, v *gocui.View) error {
 	gui.moveToSpace(gui.currentSpaceIndex - 1)
+	return nil
+}
+
+func (gui *GoCUI) hideHelp(g *gocui.Gui, v *gocui.View) error {
+	g.SetViewOnTop("messages")
+	g.SetCurrentView("cmd")
+	g.Cursor = true
+	return nil
+}
+
+func (gui *GoCUI) showHelp(g *gocui.Gui, v *gocui.View) error {
+	g.SetViewOnTop("help")
+	g.SetCurrentView("help")
+	g.Cursor = false
 	return nil
 }
 
@@ -162,6 +182,9 @@ func (gui *GoCUI) sendMessage(g *gocui.Gui, v *gocui.View) error {
 	msg := strings.TrimSpace(v.Buffer())
 	if len(msg) != 0 {
 		if msg[0] == '/' {
+			if msg[1:] == "help" {
+				gui.showHelp(g, v)
+			}
 			if msg[1:] == "quit" {
 				return gocui.ErrQuit
 			}
@@ -277,6 +300,21 @@ func (gui *GoCUI) layout(g *gocui.Gui) error {
 			return err
 		}
 	}
+	if v, err := g.SetView("help", 25, -1, maxX, maxY-2); err != nil {
+		if err != gocui.ErrUnknownView {
+			return err
+		}
+		v.Frame = false
+		fmt.Fprintf(v, " - Webinc %s HELP -\n", buildVersion)
+		fmt.Fprintln(v, "")
+		fmt.Fprintln(v, "List of commands:")
+		fmt.Fprintln(v, " \033[32m/create name \033[0mCreate a new space with name \033[32mname\033[0m")
+		fmt.Fprintln(v, " \033[32m/win number  \033[0mJump to space with number \033[32mnumber\033[0m")
+		fmt.Fprintln(v, " \033[32m/win name    \033[0mJump to space with name contains \033[32mname\033[0m")
+		fmt.Fprintln(v, " \033[32m/quit	       \033[0mQuit the application")
+		fmt.Fprintln(v, "")
+		fmt.Fprintln(v, "Press ENTER to close")
+	}
 	if v, err := g.SetView("messages", 25, -1, maxX, maxY-2); err != nil {
 		if err != gocui.ErrUnknownView {
 			return err
@@ -299,10 +337,9 @@ func (gui *GoCUI) layout(g *gocui.Gui) error {
 		}
 		v.Frame = false
 		v.Editable = true
-	}
-
-	if _, err := g.SetCurrentView("cmd"); err != nil {
-		return err
+		if _, err := g.SetCurrentView("cmd"); err != nil {
+			return err
+		}
 	}
 
 	return nil
