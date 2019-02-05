@@ -5,6 +5,7 @@ import (
 )
 
 type Activity struct {
+	Id        string
 	Verb      string
 	Published time.Time
 	Actor     struct {

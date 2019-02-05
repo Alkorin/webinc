@@ -193,8 +193,9 @@ func (c *Conversation) AddSpace(r RawSpace) (*Space, error) {
 		EncryptionKey: key,
 		Tags:          r.Tags,
 
-		conversation: c,
-		logger:       c.logger.WithField("spaceId", r.Id),
+		conversation:  c,
+		activitiesMap: make(map[string]*Activity),
+		logger:        c.logger.WithField("spaceId", r.Id),
 	}
 
 	// Store & Update space

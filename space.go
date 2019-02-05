@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/gofrs/uuid"
 	"github.com/pkg/errors"
@@ -33,8 +34,10 @@ type Space struct {
 	Team          *Team
 	Activities    []*Activity
 
-	conversation *Conversation
-	logger       *log.Entry
+	conversation    *Conversation
+	logger          *log.Entry
+	activitiesMap   map[string]*Activity
+	activitiesMutex sync.RWMutex
 }
 
 type RawSpace struct {
@@ -52,6 +55,10 @@ type RawSpace struct {
 
 	Team struct {
 		Id string
+	}
+
+	Activities struct {
+		Items []Activity
 	}
 }
 
@@ -77,6 +84,11 @@ func (s *Space) Update(r RawSpace) {
 		newParticipants = append(newParticipants, v.DisplayName)
 	}
 	s.Participants = newParticipants
+
+	// Activities
+	for _, v := range r.Activities.Items {
+		s.AddActivity(v)
+	}
 
 	// DisplayName
 	if s.Tags.Contains("TEAM") {
@@ -185,12 +197,35 @@ func (s *Space) Encrypt(data []byte) (string, error) {
 }
 
 func (s *Space) AddActivity(a Activity) *Activity {
+	s.activitiesMutex.Lock()
+	defer s.activitiesMutex.Unlock()
+
+	// Already seen activity, drop
+	if a, ok := s.activitiesMap[a.Id]; ok {
+		return a
+	}
+
+	// Decrypt name
 	displayName, err := s.Decrypt(a.Object.DisplayName)
 	if err != nil {
 		s.logger.WithError(err).Error("Failed to decrypt display name")
 	} else {
 		a.Object.DisplayName = string(displayName)
 	}
+
+	// Insert at the end and see if we need to move the data
 	s.Activities = append(s.Activities, &a)
+	length := len(s.Activities)
+	if length > 1 && s.Activities[length-2].Published.After(a.Published) {
+		// Our inserted element is older than the last one, walk until we find its place
+		i := length - 2
+		for ; i >= 0; i-- {
+			if s.Activities[i].Published.Before(a.Published) {
+				break
+			}
+		}
+		copy(s.Activities[i+2:], s.Activities[i+1:length-1])
+		s.Activities[i+1] = &a
+	}
 	return &a
 }
