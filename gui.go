@@ -76,6 +76,7 @@ func (gui *GoCUI) NewSpaceHandler(s *Space) {
 	gui.updateSpaceList()
 	if len(gui.spacesList) == 1 {
 		gui.updateMessages()
+		gui.updateSpaceStatus()
 	}
 }
 
@@ -122,6 +123,12 @@ func (gui *GoCUI) keybindings(g *gocui.Gui) error {
 	if err := g.SetKeybinding("cmd", gocui.KeyCtrlH, gocui.ModNone, gui.showHelp); err != nil {
 		return err
 	}
+	if err := g.SetKeybinding("", gocui.KeyPgup, gocui.ModNone, gui.msgUp); err != nil {
+		return err
+	}
+	if err := g.SetKeybinding("", gocui.KeyPgdn, gocui.ModNone, gui.msgDown); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -132,6 +139,33 @@ func (gui *GoCUI) nextSpace(g *gocui.Gui, v *gocui.View) error {
 
 func (gui *GoCUI) previousSpace(g *gocui.Gui, v *gocui.View) error {
 	gui.moveToSpace(gui.currentSpaceIndex - 1)
+	return nil
+}
+
+func (gui *GoCUI) msgUp(g *gocui.Gui, v *gocui.View) error {
+	return gui.msgScroll(-5)
+}
+
+func (gui *GoCUI) msgDown(g *gocui.Gui, v *gocui.View) error {
+	return gui.msgScroll(5)
+}
+
+func (gui *GoCUI) msgScroll(delta int) error {
+	v, _ := gui.View("messages")
+
+	// Current position
+	_, viewHeight := v.Size()
+	ox, oy := v.Origin()
+
+	if viewHeight+oy+delta > len(v.ViewBufferLines())-1 {
+		// We are at the bottom, enable Autoscroll
+		v.Autoscroll = true
+	} else {
+		// Set autoscroll to false and scroll.
+		v.Autoscroll = false
+		v.SetOrigin(ox, oy+delta)
+	}
+	gui.updateSpaceStatus()
 	return nil
 }
 
@@ -161,13 +195,19 @@ func (gui *GoCUI) moveToSpace(i int) {
 	}
 
 	gui.currentSpaceIndex = i
+
 	// Reset flags
 	gui.spacesList[i].NewMessage = false
 	gui.spacesList[i].Highlight = false
+
+	// Force go to bottom for messages
+	v, _ := gui.View("messages")
+	v.Autoscroll = true
+
 	// Refresh
+	gui.updateMessages()
 	gui.updateSpaceStatus()
 	gui.updateSpaceList()
-	gui.updateMessages()
 }
 
 func (gui *GoCUI) sendMessage(g *gocui.Gui, v *gocui.View) error {
@@ -280,15 +320,23 @@ func (gui *GoCUI) updateSpaceStatus() {
 		gui.spacesMutex.RLock()
 		defer gui.spacesMutex.RUnlock()
 
-		v, err := g.View("spaceStatus")
-		if err != nil {
-			return err
-		}
+		v, _ := g.View("spaceStatus")
 		v.Clear()
 
 		space := gui.spacesList[gui.currentSpaceIndex]
 
 		fmt.Fprintf(v, "[%s]", space.DisplayName())
+
+		msgView, _ := g.View("messages")
+		if msgView.Autoscroll == false {
+			_, viewHeight := msgView.Size()
+			_, oy := msgView.Origin()
+			nbLines := len(msgView.ViewBufferLines())
+
+			moreLines := nbLines - viewHeight - oy
+			fmt.Fprintf(v, " -MORE(%d)-", moreLines)
+		}
+
 		return nil
 	})
 }
