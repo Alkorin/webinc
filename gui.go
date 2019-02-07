@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/jroimartin/gocui"
+	log "github.com/sirupsen/logrus"
 )
 
 type GoCUI struct {
@@ -17,6 +18,7 @@ type GoCUI struct {
 	spacesMap         map[string]int
 	spacesList        []GuiSpace
 	currentSpaceIndex int
+	logger            *log.Entry
 }
 
 type GuiSpace struct {
@@ -44,6 +46,7 @@ func NewGoCUI(c *Conversation) (*GoCUI, error) {
 		Gui:          g,
 		conversation: c,
 		spacesMap:    make(map[string]int),
+		logger:       log.WithField("type", "Gui"),
 	}
 	gui.Cursor = true
 	gui.SetManagerFunc(gui.layout)
@@ -114,13 +117,10 @@ func (gui *GoCUI) keybindings(g *gocui.Gui) error {
 	if err := g.SetKeybinding("", gocui.KeyCtrlP, gocui.ModNone, gui.previousSpace); err != nil {
 		return err
 	}
-	if err := g.SetKeybinding("cmd", gocui.KeyEnter, gocui.ModNone, gui.sendMessage); err != nil {
+	if err := g.SetKeybinding("help", gocui.KeyEnter, gocui.ModNone, func(*gocui.Gui, *gocui.View) error { return gui.hideHelp() }); err != nil {
 		return err
 	}
-	if err := g.SetKeybinding("help", gocui.KeyEnter, gocui.ModNone, gui.hideHelp); err != nil {
-		return err
-	}
-	if err := g.SetKeybinding("cmd", gocui.KeyCtrlH, gocui.ModNone, gui.showHelp); err != nil {
+	if err := g.SetKeybinding("cmd", gocui.KeyCtrlH, gocui.ModNone, func(*gocui.Gui, *gocui.View) error { return gui.showHelp() }); err != nil {
 		return err
 	}
 	if err := g.SetKeybinding("", gocui.KeyPgup, gocui.ModNone, gui.msgUp); err != nil {
@@ -169,17 +169,17 @@ func (gui *GoCUI) msgScroll(delta int) error {
 	return nil
 }
 
-func (gui *GoCUI) hideHelp(g *gocui.Gui, v *gocui.View) error {
-	g.SetViewOnTop("messages")
-	g.SetCurrentView("cmd")
-	g.Cursor = true
+func (gui *GoCUI) hideHelp() error {
+	gui.SetViewOnTop("messages")
+	gui.SetCurrentView("cmd")
+	gui.Cursor = true
 	return nil
 }
 
-func (gui *GoCUI) showHelp(g *gocui.Gui, v *gocui.View) error {
-	g.SetViewOnTop("help")
-	g.SetCurrentView("help")
-	g.Cursor = false
+func (gui *GoCUI) showHelp() error {
+	gui.SetViewOnTop("help")
+	gui.SetCurrentView("help")
+	gui.Cursor = false
 	return nil
 }
 
@@ -210,51 +210,43 @@ func (gui *GoCUI) moveToSpace(i int) {
 	gui.updateSpaceList()
 }
 
-func (gui *GoCUI) sendMessage(g *gocui.Gui, v *gocui.View) error {
+func (gui *GoCUI) sendMessage(msg string) {
 	gui.spacesMutex.RLock()
 	defer gui.spacesMutex.RUnlock()
 
-	v, err := g.View("cmd")
-	if err != nil {
-		return err
-	}
-
-	msg := strings.TrimSpace(v.Buffer())
-	if len(msg) != 0 {
-		if msg[0] == '/' {
-			if msg[1:] == "help" {
-				gui.showHelp(g, v)
-			}
-			if msg[1:] == "quit" {
+	if msg[0] == '/' {
+		logger := gui.logger.WithField("cmd", msg)
+		logger.Trace("Exectuting command")
+		if msg[1:] == "help" {
+			gui.showHelp()
+		}
+		if msg[1:] == "quit" {
+			gui.Update(func(g *gocui.Gui) error {
 				return gocui.ErrQuit
-			}
-			if strings.HasPrefix(msg[1:], "win ") {
-				i, err := strconv.Atoi(msg[5:])
-				if err == nil && i > 0 && i <= len(gui.spacesList) {
-					gui.moveToSpace(i - 1)
-				} else {
-					// Try to find a space with a matching name
-					toSearch := strings.ToLower(msg[5:])
-					for i, v := range gui.spacesList {
-						if strings.Contains(strings.ToLower(v.DisplayName()), toSearch) {
-							gui.moveToSpace(i)
-							break
-						}
+			})
+		}
+		if strings.HasPrefix(msg[1:], "win ") {
+			i, err := strconv.Atoi(msg[5:])
+			if err == nil && i > 0 && i <= len(gui.spacesList) {
+				gui.moveToSpace(i - 1)
+			} else {
+				// Try to find a space with a matching name
+				toSearch := strings.ToLower(msg[5:])
+				for i, v := range gui.spacesList {
+					if strings.Contains(strings.ToLower(v.DisplayName()), toSearch) {
+						gui.moveToSpace(i)
+						break
 					}
 				}
 			}
-			if strings.HasPrefix(msg[1:], "create ") {
-				gui.conversation.CreateSpace(msg[8:])
-			}
-			// Unknown command
-		} else {
-			gui.spacesList[gui.currentSpaceIndex].SendMessage(msg)
 		}
+		if strings.HasPrefix(msg[1:], "create ") {
+			gui.conversation.CreateSpace(msg[8:])
+		}
+		// Unknown command
+	} else {
+		gui.spacesList[gui.currentSpaceIndex].SendMessage(msg)
 	}
-
-	v.Clear()
-	v.SetCursor(0, 0)
-	return nil
 }
 
 func (gui *GoCUI) updateSpaceList() {
@@ -367,6 +359,10 @@ func (gui *GoCUI) layout(g *gocui.Gui) error {
 		fmt.Fprintln(v, " \033[32m^P    \033[0mPrevious space")
 		fmt.Fprintln(v, " \033[32m^N    \033[0mNext space")
 		fmt.Fprintln(v, " \033[32m^C    \033[0mQuit the application")
+		fmt.Fprintln(v, " \033[32m^A    \033[0mGo to the beginning of line")
+		fmt.Fprintln(v, " \033[32m^E    \033[0mGo to the end of line")
+		fmt.Fprintln(v, " \033[32m^U    \033[0mDelete the beginning of line")
+		fmt.Fprintln(v, " \033[32m^K    \033[0mDelete the end of line")
 		fmt.Fprintln(v, "")
 		fmt.Fprintln(v, "Press ENTER to close")
 	}
@@ -392,6 +388,7 @@ func (gui *GoCUI) layout(g *gocui.Gui) error {
 		}
 		v.Frame = false
 		v.Editable = true
+		v.Editor = NewHistoryEditor(gui.sendMessage)
 		if _, err := g.SetCurrentView("cmd"); err != nil {
 			return err
 		}
