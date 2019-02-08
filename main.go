@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"runtime/debug"
 
 	"github.com/ovh/configstore"
 	log "github.com/sirupsen/logrus"
@@ -14,8 +15,14 @@ func init() {
 }
 
 func main() {
-	log.Infof("Starting webinc version %q", buildVersion)
+	// Catch panics and try to log them into error file
+	defer func() {
+		if err := recover(); err != nil {
+			log.WithField("error", err).WithField("stack", string(debug.Stack())).Panic("Code paniced :(")
+		}
+	}()
 
+	log.Infof("Starting webinc version %q", buildVersion)
 	file, err := os.OpenFile("webinc.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Fatal(err)
