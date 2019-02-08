@@ -120,9 +120,6 @@ func (gui *GoCUI) keybindings(g *gocui.Gui) error {
 	if err := g.SetKeybinding("help", gocui.KeyEnter, gocui.ModNone, func(*gocui.Gui, *gocui.View) error { return gui.hideHelp() }); err != nil {
 		return err
 	}
-	if err := g.SetKeybinding("cmd", gocui.KeyCtrlH, gocui.ModNone, func(*gocui.Gui, *gocui.View) error { return gui.showHelp() }); err != nil {
-		return err
-	}
 	if err := g.SetKeybinding("", gocui.KeyPgup, gocui.ModNone, gui.msgUp); err != nil {
 		return err
 	}
@@ -355,7 +352,6 @@ func (gui *GoCUI) layout(g *gocui.Gui) error {
 		fmt.Fprintln(v, " \033[32m/quit	       \033[0mQuit the application")
 		fmt.Fprintln(v, "")
 		fmt.Fprintln(v, "List of keyboard shortcuts:")
-		fmt.Fprintln(v, " \033[32m^H    \033[0mDisplay this help")
 		fmt.Fprintln(v, " \033[32m^P    \033[0mPrevious space")
 		fmt.Fprintln(v, " \033[32m^N    \033[0mNext space")
 		fmt.Fprintln(v, " \033[32m^C    \033[0mQuit the application")
