@@ -409,6 +409,11 @@ func (k *KMS) ParseMercuryEncryptionMessage(msg []byte) {
 			}
 
 			payload, err := jwe.Decrypt(key)
+			if err != nil {
+				logger.WithError(err).Error("Failed to decrypt message")
+				continue
+			}
+
 			logger = logger.WithField("payload", string(payload))
 			logger.Trace("Message decrypted")
 

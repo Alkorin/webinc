@@ -258,15 +258,15 @@ func (gui *GoCUI) updateSpaceList() {
 		v.Clear()
 		for i, s := range gui.spacesList {
 			color := "34"
+
 			if i == gui.currentSpaceIndex {
 				color = "37;44"
 			} else if s.Highlight {
 				color = "33"
 			} else if s.NewMessage {
 				color = "32"
-			} else {
-				color = "34"
 			}
+
 			fmt.Fprintf(v, "\033[32m%2d\033[0m.\033[%sm%s\033[0m\n", i+1, color, s.DisplayName())
 		}
 
