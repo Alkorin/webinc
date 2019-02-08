@@ -240,5 +240,9 @@ func (s *Space) AddActivity(a Activity) *Activity {
 		copy(s.Activities[i+2:], s.Activities[i+1:length-1])
 		s.Activities[i+1] = &a
 	}
+
+	// Store in seen map
+	s.activitiesMap[a.Id] = &a
+
 	return &a
 }
