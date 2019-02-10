@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"sync"
@@ -25,6 +26,8 @@ type Conversation struct {
 	newSpaceEventHandlers    []func(*Space)
 	newActivityEventHandlers []func(*Space, *Activity)
 
+	activityQueue chan io.Reader
+
 	logger *log.Entry
 }
 
@@ -35,18 +38,20 @@ type Team struct {
 
 func NewConversation(device *Device, mercury *Mercury, kms *KMS) *Conversation {
 	c := &Conversation{
-		device:  device,
-		mercury: mercury,
-		kms:     kms,
-		spaces:  make(map[string]*Space),
-		teams:   make(map[string]*Team),
-		logger:  log.WithField("type", "Conversation"),
+		device:        device,
+		mercury:       mercury,
+		kms:           kms,
+		spaces:        make(map[string]*Space),
+		teams:         make(map[string]*Team),
+		logger:        log.WithField("type", "Conversation"),
+		activityQueue: make(chan io.Reader, 64),
 	}
 
 	mercury.RegisterHandler("conversation.activity", c.ParseActivity)
 
 	// Fetch current spaces
 	go c.FetchAllSpaces()
+	go c.HandleActivityQueue()
 
 	return c
 }
@@ -277,6 +282,26 @@ func (c *Conversation) AddNewSpaceEventHandler(f func(*Space)) {
 
 func (c *Conversation) AddNewActivityEventHandler(f func(*Space, *Activity)) {
 	c.newActivityEventHandlers = append(c.newActivityEventHandlers, f)
+}
+
+func (c *Conversation) HandleActivityQueue() {
+	for data := range c.activityQueue {
+		response, err := c.device.RequestService("POST", "conversationServiceUrl", "/activities", data)
+		if err != nil {
+			log.WithError(err).Error("Failed to create request")
+			continue
+		}
+		defer response.Body.Close()
+
+		if response.StatusCode != http.StatusOK {
+			responseError, err := ioutil.ReadAll(response.Body)
+			if err != nil {
+				c.logger.WithError(err).Error("Failed to read error response")
+			} else {
+				c.logger.WithError(errors.New(string(responseError))).Error("Failed to send message")
+			}
+		}
+	}
 }
 
 func (c *Conversation) CreateSpace(name string) {

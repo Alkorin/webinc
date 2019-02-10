@@ -3,8 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"io/ioutil"
-	"net/http"
 	"strings"
 	"sync"
 
@@ -157,19 +155,7 @@ func (s *Space) SendMessage(msg string) error {
 	}
 
 	logger.Trace("Send message")
-	response, err := s.conversation.device.RequestService("POST", "conversationServiceUrl", "/activities", bytes.NewReader(data))
-	if err != nil {
-		return errors.Wrap(err, "failed to create request")
-	}
-
-	if response.StatusCode != http.StatusOK {
-		responseError, err := ioutil.ReadAll(response.Body)
-		if err != nil {
-			return errors.Wrap(err, "failed to read error response")
-		}
-		return errors.Errorf("failed to send message: %s", responseError)
-	}
-
+	s.conversation.activityQueue <- bytes.NewReader(data)
 	return nil
 }
 
