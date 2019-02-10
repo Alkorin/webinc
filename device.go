@@ -130,7 +130,9 @@ func NewDevice(config *Config) (*Device, error) {
 	// Store in config
 	config.SetString("auth-token", token)
 	config.SetString("device-url", device.Url)
-	config.Save()
+	if err := config.Save(); err != nil {
+		device.logger.WithError(err).Error("Failed to save config")
+	}
 
 	return &device, nil
 }
