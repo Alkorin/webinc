@@ -4,7 +4,6 @@ import (
 	"os"
 	"runtime/debug"
 
-	"github.com/ovh/configstore"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -22,24 +21,21 @@ func main() {
 		}
 	}()
 
+	config, err := NewConfig()
+	if err != nil {
+		log.WithError(err).Fatal("Failed to read config")
+	}
+
 	log.Infof("Starting webinc version %q", buildVersion)
-	file, err := os.OpenFile("webinc.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(config.GetString("log-file"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Fatal(err)
 	}
 	log.SetOutput(file)
 	log.AddHook(NewFatalHook())
 
-	configstore.File("webinc.conf")
-	config := configstore.Filter().Squash()
-
-	token, err := config.MustGetItem("auth-token").Value()
-	if err != nil {
-		log.WithError(err).Fatal("Missing auth-token in webinc.conf")
-	}
-
-	logLevelString, err := config.MustGetItem("log-level").Value()
-	if err == nil {
+	logLevelString := config.GetString("log-level")
+	if logLevelString != "" {
 		logLevel, err := log.ParseLevel(logLevelString)
 		if err != nil {
 			log.WithError(err).Fatal("Invalid log-level")
@@ -51,7 +47,7 @@ func main() {
 
 	// Register Device
 	log.Debug("Registering device...")
-	device, err := NewDevice(token)
+	device, err := NewDevice(config)
 	if err != nil {
 		log.Fatal(err)
 	}

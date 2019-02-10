@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"os"
 
 	"io/ioutil"
 
@@ -22,10 +25,21 @@ type Device struct {
 	Services     map[string]string
 
 	logger *log.Entry
+	config *Config
 }
 
-func NewDevice(token string) (*Device, error) {
+func NewDevice(config *Config) (*Device, error) {
 	logger := log.WithField("type", "Device")
+
+	token := config.GetString("auth-token")
+	for token == "" {
+		fmt.Println("Please provide a valid auth-token associated to your Webex Teams account. To obtain one, you can go to https://developer.webex.com/login, Documentation, Api Reference, choose any API endpoint and you will be able to copy the Authorization token on the right.")
+		fmt.Print("token> ")
+		scanner := bufio.NewScanner(os.Stdin)
+		scanner.Scan()
+		token = scanner.Text()
+	}
+
 	deviceRegisterRequest, err := json.Marshal(struct {
 		DeviceName     string `json:"deviceName"`
 		DeviceType     string `json:"deviceType"`
@@ -79,8 +93,14 @@ func NewDevice(token string) (*Device, error) {
 	logger = logger.WithField("device", device)
 	logger.Trace("Device created")
 
+	// Keep values
 	device.Token = token
 	device.logger = logger
+	device.config = config
+
+	// Store in config
+	config.SetString("auth-token", token)
+	config.Save()
 
 	return &device, nil
 }
