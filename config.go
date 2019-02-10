@@ -98,7 +98,7 @@ func (c *Config) Save() error {
 	// Check if folder exists
 	folder := filepath.Dir(c.configFileName)
 	if _, err := os.Stat(folder); os.IsNotExist(err) {
-		err := os.Mkdir(folder, 0700)
+		err := os.MkdirAll(folder, 0700)
 		if err != nil {
 			return errors.Wrap(err, "failed to create folder for configuration file")
 		}
