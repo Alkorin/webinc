@@ -40,41 +40,70 @@ func NewDevice(config *Config) (*Device, error) {
 		token = scanner.Text()
 	}
 
-	deviceRegisterRequest, err := json.Marshal(struct {
-		DeviceName     string `json:"deviceName"`
-		DeviceType     string `json:"deviceType"`
-		LocalizedModel string `json:"localizedModel"`
-		Model          string `json:"model"`
-		Name           string `json:"name"`
-		SystemName     string `json:"systemName"`
-		SystemVersion  string `json:"systemVersion"`
-	}{
-		"webinc",
-		"DESKTOP",
-		"webinc",
-		"webinc",
-		"webinc",
-		"webinc",
-		buildVersion,
-	})
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to marshal deviceRegisterRequest")
+	var response *http.Response
+	if deviceUrl := config.GetString("device-url"); deviceUrl != "" {
+		// Try to fetch current device
+		request, err := http.NewRequest("GET", deviceUrl, nil)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create http request")
+		}
+
+		request.Header.Set("Authorization", "Bearer "+token)
+		request.Header.Set("Content-Type", "application/json")
+
+		logger.Trace("Fetch device")
+		response, err = http.DefaultClient.Do(request)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create device")
+		}
+		defer response.Body.Close()
 	}
 
-	request, err := http.NewRequest("POST", DEVICE_API_URL, bytes.NewBuffer(deviceRegisterRequest))
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create http request")
+	if response == nil || (response.StatusCode != http.StatusOK && response.StatusCode != http.StatusUnauthorized) {
+		// No device-url or previous call failed, try to create a new device
+		deviceRegisterRequest, err := json.Marshal(struct {
+			DeviceName     string `json:"deviceName"`
+			DeviceType     string `json:"deviceType"`
+			LocalizedModel string `json:"localizedModel"`
+			Model          string `json:"model"`
+			Name           string `json:"name"`
+			SystemName     string `json:"systemName"`
+			SystemVersion  string `json:"systemVersion"`
+		}{
+			"webinc",
+			"DESKTOP",
+			"webinc",
+			"webinc",
+			"webinc",
+			"webinc",
+			buildVersion,
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to marshal deviceRegisterRequest")
+		}
+
+		request, err := http.NewRequest("POST", DEVICE_API_URL, bytes.NewBuffer(deviceRegisterRequest))
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create http request")
+		}
+
+		request.Header.Set("Authorization", "Bearer "+token)
+		request.Header.Set("Content-Type", "application/json")
+
+		logger.Trace("Create device")
+		response, err = http.DefaultClient.Do(request)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to create device")
+		}
+		defer response.Body.Close()
 	}
 
-	request.Header.Set("Authorization", "Bearer "+token)
-	request.Header.Set("Content-Type", "application/json")
-
-	logger.Trace("Create device")
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create device")
+	if response.StatusCode == http.StatusUnauthorized {
+		// Token is incorrect
+		config.SetString("auth-token", "")
+		config.Save()
+		return nil, errors.New("token is invalid, please retry")
 	}
-	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
 		responseError, err := ioutil.ReadAll(response.Body)
@@ -86,7 +115,7 @@ func NewDevice(config *Config) (*Device, error) {
 	}
 
 	var device Device
-	err = json.NewDecoder(response.Body).Decode(&device)
+	err := json.NewDecoder(response.Body).Decode(&device)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to unmarshal device info")
 	}
@@ -100,6 +129,7 @@ func NewDevice(config *Config) (*Device, error) {
 
 	// Store in config
 	config.SetString("auth-token", token)
+	config.SetString("device-url", device.Url)
 	config.Save()
 
 	return &device, nil

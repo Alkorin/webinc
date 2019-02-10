@@ -61,6 +61,7 @@ func main() {
 	}
 	log.Debug("Done")
 
+	// Start KMS Service
 	log.Debug("Connecting to KMS...")
 	kms, err := NewKMS(device, mercury)
 	if err != nil {
