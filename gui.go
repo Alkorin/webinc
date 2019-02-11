@@ -184,6 +184,11 @@ func (gui *GoCUI) moveToSpace(i int) {
 	gui.spacesMutex.RLock()
 	defer gui.spacesMutex.RUnlock()
 
+	// No spaces
+	if len(gui.spacesList) == 0 {
+		return
+	}
+
 	// Wrap
 	if i < 0 {
 		i = len(gui.spacesList) - 1
