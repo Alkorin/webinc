@@ -11,6 +11,7 @@ type Activity struct {
 	Actor     struct {
 		Id          string
 		DisplayName string
+		EntryUUID   string
 	}
 	Target struct {
 		Url string
