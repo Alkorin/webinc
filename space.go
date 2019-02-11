@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gofrs/uuid"
 	"github.com/pkg/errors"
@@ -32,6 +33,7 @@ type Space struct {
 	Tags                         SpaceTags
 	Team                         *Team
 	Activities                   []*Activity
+	LastSeenActivityDate         time.Time
 
 	conversation    *Conversation
 	logger          *log.Entry
@@ -60,6 +62,8 @@ type RawSpace struct {
 	Activities struct {
 		Items []Activity
 	}
+
+	LastSeenActivityDate time.Time
 }
 
 func (s *Space) Update(r RawSpace) {
@@ -159,6 +163,41 @@ func (s *Space) SendMessage(msg string) error {
 	return nil
 }
 
+func (s *Space) SendAcknowledge() error {
+	logger := s.logger.WithField("func", "SendAcknowledge")
+
+	activity := struct {
+		ClientTempId string `json:"clientTempId"`
+		ObjectType   string `json:"objectType"`
+		Object       struct {
+			Id         string `json:"id"`
+			ObjectType string `json:"objectType"`
+		} `json:"object"`
+		Target struct {
+			Id         string `json:"id"`
+			ObjectType string `json:"objectType"`
+		} `json:"target"`
+		Verb string `json:"verb"`
+	}{
+		ClientTempId: uuid.Must(uuid.NewV4()).String(),
+		ObjectType:   "activity",
+		Verb:         "acknowledge",
+	}
+	activity.Object.Id = s.Activities[len(s.Activities)-1].Id
+	activity.Object.ObjectType = "activity"
+	activity.Target.Id = s.Id
+	activity.Target.ObjectType = "conversation"
+
+	data, err := json.Marshal(activity)
+	if err != nil {
+		return errors.Wrap(err, "failed to marshal activity")
+	}
+
+	logger.Trace("Send message")
+	s.conversation.activityQueue <- bytes.NewReader(data)
+	return nil
+}
+
 func (s *Space) Decrypt(encryptedString string) ([]byte, error) {
 	encryptedObject, err := jose.ParseEncrypted(encryptedString)
 	if err != nil {
@@ -231,4 +270,15 @@ func (s *Space) AddActivity(a Activity) *Activity {
 	s.activitiesMap[a.Id] = &a
 
 	return &a
+}
+
+func (s *Space) HasUnseenActivities() bool {
+	s.activitiesMutex.RLock()
+	defer s.activitiesMutex.RUnlock()
+
+	if len(s.Activities) > 0 && s.Activities[len(s.Activities)-1].Published.After(s.LastSeenActivityDate) {
+		return true
+	}
+
+	return false
 }

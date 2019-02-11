@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jroimartin/gocui"
 	log "github.com/sirupsen/logrus"
@@ -14,17 +15,17 @@ type GoCUI struct {
 	*gocui.Gui
 	conversation *Conversation
 
-	spacesMutex       sync.RWMutex
-	spacesMap         map[string]int
-	spacesList        []GuiSpace
-	currentSpaceIndex int
-	logger            *log.Entry
+	spacesMutex                          sync.RWMutex
+	spacesMap                            map[string]int
+	spacesList                           []GuiSpace
+	currentSpaceIndex                    int
+	currentSpaceNewMessagesSeparatorTime time.Time
+	logger                               *log.Entry
 }
 
 type GuiSpace struct {
 	*Space
-	Highlight  bool
-	NewMessage bool
+	Highlight bool
 }
 
 func (g *GuiSpace) DisplayName() string {
@@ -78,8 +79,7 @@ func (gui *GoCUI) NewSpaceHandler(s *Space) {
 
 	gui.updateSpaceList()
 	if len(gui.spacesList) == 1 {
-		gui.updateMessages()
-		gui.updateSpaceStatus()
+		gui.moveToSpace(0)
 	}
 }
 
@@ -87,10 +87,11 @@ func (gui *GoCUI) NewActivityHandler(s *Space, a *Activity) {
 	gui.spacesMutex.RLock()
 	defer gui.spacesMutex.RUnlock()
 
-	if a.Verb == "post" || a.Verb == "share" {
+	if a.Verb == "acknowledge" && gui.spacesList[gui.currentSpaceIndex].Id != a.Target.Id {
+		gui.updateSpaceList()
+	} else if a.Verb == "post" || a.Verb == "share" {
 		spaceIndex := gui.spacesMap[s.Id]
 		if spaceIndex != gui.currentSpaceIndex {
-			gui.spacesList[spaceIndex].NewMessage = true
 			for _, v := range a.Object.Mentions.Items {
 				if v.Id == gui.conversation.device.UserID {
 					gui.spacesList[spaceIndex].Highlight = true
@@ -197,9 +198,13 @@ func (gui *GoCUI) moveToSpace(i int) {
 	}
 
 	gui.currentSpaceIndex = i
+	newSpace := gui.spacesList[gui.currentSpaceIndex]
+	gui.currentSpaceNewMessagesSeparatorTime = newSpace.LastSeenActivityDate
+	if newSpace.HasUnseenActivities() {
+		gui.spacesList[gui.currentSpaceIndex].SendAcknowledge()
+	}
 
 	// Reset flags
-	gui.spacesList[i].NewMessage = false
 	gui.spacesList[i].Highlight = false
 
 	// Force go to bottom for messages
@@ -268,7 +273,7 @@ func (gui *GoCUI) updateSpaceList() {
 				color = "37;44"
 			} else if s.Highlight {
 				color = "33"
-			} else if s.NewMessage {
+			} else if s.HasUnseenActivities() {
 				color = "32"
 			}
 
@@ -292,14 +297,26 @@ func (gui *GoCUI) updateMessages() {
 		v.Clear()
 		v.SetOrigin(0, 0)
 
-		space := gui.spacesList[gui.currentSpaceIndex]
-		for _, a := range space.Activities {
-			if a.Verb == "post" {
-				fmt.Fprintf(v, "%s %s> %s\n", a.Published.Format("15:04:05"), a.Actor.DisplayName, a.Object.DisplayName)
-			} else if a.Verb == "share" {
-				fmt.Fprintf(v, "%s %s has shared a content of type %q\n", a.Published.Format("15:04:05"), a.Actor.DisplayName, a.Object.ContentCategory)
-				if a.Object.DisplayName != "" {
+		hasPrintNewMessagesSeparator := false
+
+		if len(gui.spacesList) != 0 {
+			space := gui.spacesList[gui.currentSpaceIndex]
+			for _, a := range space.Activities {
+				if a.Published.After(gui.currentSpaceNewMessagesSeparatorTime) && !hasPrintNewMessagesSeparator {
+					hasPrintNewMessagesSeparator = true
+					separator := " New messages "
+					width, _ := v.Size()
+					fmt.Fprint(v, strings.Repeat("-", (width-len(separator))/2))
+					fmt.Fprint(v, separator)
+					fmt.Fprint(v, strings.Repeat("-", width-len(separator)-(width-len(separator))/2))
+				}
+				if a.Verb == "post" {
 					fmt.Fprintf(v, "%s %s> %s\n", a.Published.Format("15:04:05"), a.Actor.DisplayName, a.Object.DisplayName)
+				} else if a.Verb == "share" {
+					fmt.Fprintf(v, "%s %s has shared a content of type %q\n", a.Published.Format("15:04:05"), a.Actor.DisplayName, a.Object.ContentCategory)
+					if a.Object.DisplayName != "" {
+						fmt.Fprintf(v, "%s %s> %s\n", a.Published.Format("15:04:05"), a.Actor.DisplayName, a.Object.DisplayName)
+					}
 				}
 			}
 		}

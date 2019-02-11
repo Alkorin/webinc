@@ -115,7 +115,21 @@ func (c *Conversation) ParseActivity(msg []byte) {
 
 		space.DisplayName = string(displayName)
 	case "acknowledge":
-		logger.Trace("Space marked as read")
+		logger = logger.WithField("space", mercuryConversationActivity.Data.Activity.Target.Id)
+		if mercuryConversationActivity.Data.Activity.Actor.EntryUUID == c.device.UserID {
+			logger.Trace("Space marked as read")
+
+			space, err := c.GetSpace(mercuryConversationActivity.Data.Activity.Target.Id)
+			if err != nil {
+				logger.WithError(err).Error("Failed to get space")
+				return
+			}
+
+			space.LastSeenActivityDate = mercuryConversationActivity.Data.Activity.Published
+			for _, f := range c.newActivityEventHandlers {
+				f(space, &mercuryConversationActivity.Data.Activity)
+			}
+		}
 	default:
 		logger.Error("Unhandled verb")
 	}
@@ -187,8 +201,9 @@ func (c *Conversation) AddSpace(r RawSpace) (*Space, error) {
 	logger.Trace("Adding space")
 
 	space := &Space{
-		Id:   r.Id,
-		Tags: r.Tags,
+		Id:                   r.Id,
+		Tags:                 r.Tags,
+		LastSeenActivityDate: r.LastSeenActivityDate,
 
 		conversation:  c,
 		activitiesMap: make(map[string]*Activity),
