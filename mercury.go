@@ -23,8 +23,9 @@ func NewMercury(device *Device) (*Mercury, error) {
 		logger:   log.WithField("type", "Mercury"),
 	}
 
-	conn, _, err := websocket.DefaultDialer.Dial(device.WebSocketUrl, nil)
+	conn, resp, err := websocket.DefaultDialer.Dial(device.WebSocketUrl, nil)
 	if err != nil {
+		mercury.logger.WithField("websocketResponse", resp).Trace("Failed to dial WS")
 		return nil, errors.Wrap(err, "failed to connect to mercury service")
 	}
 
