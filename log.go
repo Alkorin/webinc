@@ -20,7 +20,7 @@ func (f *FatalHook) Fire(e *log.Entry) error {
 	return nil
 }
 
-func (hook *FatalHook) Levels() []log.Level {
+func (f *FatalHook) Levels() []log.Level {
 	return []log.Level{
 		log.PanicLevel,
 		log.FatalLevel,

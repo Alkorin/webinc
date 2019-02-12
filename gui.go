@@ -339,7 +339,7 @@ func (gui *GoCUI) updateSpaceStatus() {
 		fmt.Fprintf(v, "[%s]", space.DisplayName())
 
 		msgView, _ := g.View("messages")
-		if msgView.Autoscroll == false {
+		if !msgView.Autoscroll {
 			_, viewHeight := msgView.Size()
 			_, oy := msgView.Origin()
 			nbLines := len(msgView.ViewBufferLines())
