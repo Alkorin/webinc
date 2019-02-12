@@ -88,10 +88,13 @@ func (c *Conversation) ParseActivity(msg []byte) {
 	case "create":
 		logger = logger.WithField("space", mercuryConversationActivity.Data.Activity.Object.Id)
 		logger.Trace("New space")
-		_, err := c.GetSpace(mercuryConversationActivity.Data.Activity.Object.Id)
+		space, err := c.GetSpace(mercuryConversationActivity.Data.Activity.Object.Id)
 		if err != nil {
 			logger.WithError(err).Error("Failed to get space")
 			return
+		}
+		for _, f := range c.newActivityEventHandlers {
+			f(space, &mercuryConversationActivity.Data.Activity)
 		}
 	case "leave":
 		logger.Trace("Leave space")
