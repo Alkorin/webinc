@@ -87,7 +87,12 @@ func (gui *GoCUI) NewActivityHandler(s *Space, a *Activity) {
 	gui.spacesMutex.RLock()
 	defer gui.spacesMutex.RUnlock()
 
-	if a.Verb == "acknowledge" && gui.spacesList[gui.currentSpaceIndex].Id != a.Target.Id {
+	if a.Verb == "create" {
+		spaceIndex, ok := gui.spacesMap[s.Id]
+		if ok {
+			gui.moveToSpace(spaceIndex)
+		}
+	} else if a.Verb == "acknowledge" && gui.spacesList[gui.currentSpaceIndex].Id != a.Target.Id {
 		gui.updateSpaceList()
 	} else if a.Verb == "post" || a.Verb == "share" {
 		spaceIndex := gui.spacesMap[s.Id]
