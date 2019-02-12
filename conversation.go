@@ -306,7 +306,6 @@ func (c *Conversation) HandleActivityQueue() {
 			log.WithError(err).Error("Failed to create request")
 			continue
 		}
-		defer response.Body.Close()
 
 		if response.StatusCode != http.StatusOK {
 			responseError, err := ioutil.ReadAll(response.Body)
@@ -316,6 +315,8 @@ func (c *Conversation) HandleActivityQueue() {
 				c.logger.WithError(errors.New(string(responseError))).Error("Failed to send message")
 			}
 		}
+
+		response.Body.Close()
 	}
 }
 

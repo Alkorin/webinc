@@ -118,7 +118,6 @@ func (s *Space) Update(r RawSpace) {
 		// No DisplayName, use participants
 		s.DisplayName = strings.Join(s.Participants, ", ")
 	}
-	return
 }
 
 func (s *Space) SendMessage(msg string) error {

@@ -39,7 +39,10 @@ func NewMercury(device *Device) (*Mercury, error) {
 	}
 
 	mercury.logger.Trace("Sending Auth Request...")
-	conn.WriteMessage(websocket.TextMessage, authRequestData)
+	err = conn.WriteMessage(websocket.TextMessage, authRequestData)
+	if err != nil {
+		panic(err)
+	}
 
 	// Start Mercury Goroutine
 	go func() {
