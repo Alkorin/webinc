@@ -11,6 +11,14 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+var logo = []string{
+	`__        __   _    ___        ____ `,
+	`\ \      / /__| |__|_ _|_ __  / ___|`,
+	` \ \ /\ / / _ \ '_ \| || '_ \| |    `,
+	`  \ V  V /  __/ |_) | || | | | |___ `,
+	`   \_/\_/ \___|_.__/___|_| |_|\____|`,
+}
+
 type GoCUI struct {
 	*gocui.Gui
 	conversation *Conversation
@@ -44,10 +52,11 @@ func NewGoCUI(c *Conversation) (*GoCUI, error) {
 	}
 
 	gui := &GoCUI{
-		Gui:          g,
-		conversation: c,
-		spacesMap:    make(map[string]int),
-		logger:       log.WithField("type", "Gui"),
+		Gui:               g,
+		conversation:      c,
+		currentSpaceIndex: -1,
+		spacesMap:         make(map[string]int),
+		logger:            log.WithField("type", "Gui"),
 	}
 	gui.Cursor = true
 	gui.SetManagerFunc(gui.layout)
@@ -77,12 +86,7 @@ func (gui *GoCUI) NewSpaceHandler(s *Space) {
 	gui.spacesList = append(gui.spacesList, GuiSpace{Space: s})
 	gui.spacesMap[s.Id] = pos
 	gui.spacesMutex.Unlock()
-
-	if len(gui.spacesList) == 1 {
-		gui.moveToSpace(0)
-	} else {
-		gui.updateSpaceList()
-	}
+	gui.updateSpaceList()
 }
 
 func (gui *GoCUI) RemoveSpaceHandler(s *Space) {
@@ -397,7 +401,7 @@ func (gui *GoCUI) layout(g *gocui.Gui) error {
 			return err
 		}
 		v.Frame = false
-		fmt.Fprintf(v, " - Webinc %s HELP -\n", buildVersion)
+		fmt.Fprintf(v, " - WebInC %s HELP -\n", buildVersion)
 		fmt.Fprintln(v, "")
 		fmt.Fprintln(v, "List of commands:")
 		fmt.Fprintln(v, " \033[32m/create name \033[0mCreate a new space with name \033[32mname\033[0m")
@@ -424,6 +428,20 @@ func (gui *GoCUI) layout(g *gocui.Gui) error {
 		v.Wrap = true
 		v.Autoscroll = true
 		v.Frame = false
+		fmt.Fprintln(v, "")
+		fmt.Fprintln(v, "")
+
+		width, _ := v.Size()
+
+		for _, l := range logo {
+			fmt.Fprint(v, strings.Repeat(" ", (width-len(l))/2))
+			fmt.Fprintln(v, l)
+		}
+
+		fmt.Fprintln(v, "")
+		l := fmt.Sprintf("WebInC - Webex Teams in Console - %s", buildVersion)
+		fmt.Fprint(v, strings.Repeat(" ", (width-len(l))/2))
+		fmt.Fprintln(v, l)
 	}
 	if v, err := g.SetView("spaceStatus", 25, maxY-3, maxX, maxY-1); err != nil {
 		if err != gocui.ErrUnknownView {
