@@ -57,6 +57,7 @@ func NewGoCUI(c *Conversation) (*GoCUI, error) {
 	}
 
 	c.AddNewSpaceEventHandler(gui.NewSpaceHandler)
+	c.AddRemoveSpaceEventHandler(gui.RemoveSpaceHandler)
 	c.AddNewActivityEventHandler(gui.NewActivityHandler)
 
 	return gui, nil
@@ -77,9 +78,36 @@ func (gui *GoCUI) NewSpaceHandler(s *Space) {
 	gui.spacesMap[s.Id] = pos
 	gui.spacesMutex.Unlock()
 
-	gui.updateSpaceList()
 	if len(gui.spacesList) == 1 {
 		gui.moveToSpace(0)
+	} else {
+		gui.updateSpaceList()
+	}
+}
+
+func (gui *GoCUI) RemoveSpaceHandler(s *Space) {
+	gui.spacesMutex.Lock()
+
+	if spaceIndex, ok := gui.spacesMap[s.Id]; ok {
+		// Remove space from list
+		gui.spacesList = append(gui.spacesList[:spaceIndex], gui.spacesList[spaceIndex+1:]...)
+
+		// Recompute map
+		gui.spacesMap = make(map[string]int)
+		for i, v := range gui.spacesList {
+			gui.spacesMap[v.Id] = i
+		}
+
+		gui.spacesMutex.Unlock()
+
+		// Update UI
+		if spaceIndex == gui.currentSpaceIndex {
+			gui.moveToSpace(gui.currentSpaceIndex)
+		} else {
+			gui.updateSpaceList()
+		}
+	} else {
+		gui.spacesMutex.Unlock()
 	}
 }
 

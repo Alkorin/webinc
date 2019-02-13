@@ -24,6 +24,7 @@ type Conversation struct {
 	teamsMutex sync.RWMutex
 
 	newSpaceEventHandlers    []func(*Space)
+	removeSpaceEventHandlers []func(*Space)
 	newActivityEventHandlers []func(*Space, *Activity)
 
 	activityQueue chan io.Reader
@@ -83,23 +84,71 @@ func (c *Conversation) ParseActivity(msg []byte) {
 		for _, f := range c.newActivityEventHandlers {
 			f(space, a)
 		}
+		logger.Trace("New space")
 	case "add":
+		logger = logger.WithField("space", mercuryConversationActivity.Data.Activity.Target.Id).WithField("verb", mercuryConversationActivity.Data.Activity.Verb)
 		logger.Trace("New space")
-	case "create":
-		logger = logger.WithField("space", mercuryConversationActivity.Data.Activity.Object.Id)
-		logger.Trace("New space")
-		space, err := c.GetSpace(mercuryConversationActivity.Data.Activity.Object.Id)
-		if err != nil {
-			logger.WithError(err).Error("Failed to get space")
-			return
+
+		if mercuryConversationActivity.Data.Activity.Object.EntryUUID == c.device.UserID {
+			space, err := c.GetSpace(mercuryConversationActivity.Data.Activity.Target.Id)
+			if err != nil {
+				logger.WithError(err).Error("Failed to get space")
+				return
+			}
+
+			for _, f := range c.newActivityEventHandlers {
+				f(space, &mercuryConversationActivity.Data.Activity)
+			}
 		}
-		for _, f := range c.newActivityEventHandlers {
-			f(space, &mercuryConversationActivity.Data.Activity)
+	case "create":
+		logger = logger.WithField("space", mercuryConversationActivity.Data.Activity.Object.Id).WithField("verb", mercuryConversationActivity.Data.Activity.Verb)
+		logger.Trace("New space")
+
+		if mercuryConversationActivity.Data.Activity.Actor.EntryUUID == c.device.UserID {
+			space, err := c.GetSpace(mercuryConversationActivity.Data.Activity.Object.Id)
+			if err != nil {
+				logger.WithError(err).Error("Failed to get space")
+				return
+			}
+
+			for _, f := range c.newActivityEventHandlers {
+				f(space, &mercuryConversationActivity.Data.Activity)
+			}
+		}
+	case "hide":
+		logger = logger.WithField("space", mercuryConversationActivity.Data.Activity.Object.Id).WithField("verb", mercuryConversationActivity.Data.Activity.Verb)
+		logger.Trace("Leave space")
+
+		if mercuryConversationActivity.Data.Activity.Actor.EntryUUID == c.device.UserID {
+			space, err := c.GetSpace(mercuryConversationActivity.Data.Activity.Object.Id)
+			if err != nil {
+				logger.WithError(err).Error("Failed to get space")
+				return
+			}
+
+			for _, f := range c.removeSpaceEventHandlers {
+				f(space)
+			}
+
+			c.RemoveSpace(space)
 		}
 	case "leave":
+		logger = logger.WithField("space", mercuryConversationActivity.Data.Activity.Target.Id).WithField("verb", mercuryConversationActivity.Data.Activity.Verb)
 		logger.Trace("Leave space")
-	case "hide":
-		logger.Trace("Leave space")
+
+		if mercuryConversationActivity.Data.Activity.Object.EntryUUID == c.device.UserID {
+			space, err := c.GetSpace(mercuryConversationActivity.Data.Activity.Target.Id)
+			if err != nil {
+				logger.WithError(err).Error("Failed to get space")
+				return
+			}
+
+			for _, f := range c.removeSpaceEventHandlers {
+				f(space)
+			}
+
+			c.RemoveSpace(space)
+		}
 	case "update":
 		logger = logger.WithField("space", mercuryConversationActivity.Data.Activity.Target.Id)
 		logger.Trace("Update space")
@@ -247,6 +296,12 @@ func (c *Conversation) AddSpace(r RawSpace) (*Space, error) {
 	}
 }
 
+func (c *Conversation) RemoveSpace(space *Space) {
+	c.spacesMutex.Lock()
+	delete(c.spaces, space.Id)
+	c.spacesMutex.Unlock()
+}
+
 func (c *Conversation) GetTeam(uuid string) (*Team, error) {
 	logger := c.logger.WithField("func", "GetTeam").WithField("uuid", uuid)
 	c.teamsMutex.RLock()
@@ -296,6 +351,10 @@ func (c *Conversation) GetTeam(uuid string) (*Team, error) {
 
 func (c *Conversation) AddNewSpaceEventHandler(f func(*Space)) {
 	c.newSpaceEventHandlers = append(c.newSpaceEventHandlers, f)
+}
+
+func (c *Conversation) AddRemoveSpaceEventHandler(f func(*Space)) {
+	c.removeSpaceEventHandlers = append(c.removeSpaceEventHandlers, f)
 }
 
 func (c *Conversation) AddNewActivityEventHandler(f func(*Space, *Activity)) {
