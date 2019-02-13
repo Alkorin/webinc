@@ -20,6 +20,7 @@ type Activity struct {
 	Object struct {
 		Id          string
 		DisplayName string
+		EntryUUID   string
 		Mentions    struct {
 			Items []struct {
 				Id string
