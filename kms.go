@@ -298,8 +298,8 @@ func (k *KMS) SendRequest(cluster string, key *jose.JSONWebKey, request KmsReque
 		return nil, errors.Wrap(err, "failed to marshal request")
 	}
 
-	waitingChan := k.CreateDeferredHandler(request.RequestId)
 	logger.Trace("Send KMS Request")
+	waitingChan := k.CreateDeferredHandler(request.RequestId)
 	httpResponse, err := k.device.RequestService("POST", "encryptionServiceUrl", "/kms/messages", bytes.NewReader(batchRequestJson))
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to send kms http request")
@@ -314,7 +314,9 @@ func (k *KMS) SendRequest(cluster string, key *jose.JSONWebKey, request KmsReque
 		return nil, errors.Errorf("failed to send request to KMS: %s", responseError)
 	}
 
+	logger.Trace("Request accepted, Waiting response...")
 	kmsResponse := <-waitingChan
+
 	return kmsResponse, nil
 }
 
