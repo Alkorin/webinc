@@ -153,7 +153,7 @@ func (s *Space) SendMessage(msg string) error {
 		Verb string `json:"verb"`
 	}{
 		ClientTempId:     uuid.Must(uuid.NewV4()).String(),
-		EncryptionKeyUrl: s.EncryptionKey.KeyID,
+		EncryptionKeyUrl: s.DefaultActivityEncryptionKey.KeyID,
 		ObjectType:       "activity",
 		Verb:             "post",
 	}
