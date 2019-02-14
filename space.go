@@ -72,6 +72,10 @@ func (s *Space) IsOneOnOne() bool {
 	return s.Tags.Contains("ONE_ON_ONE")
 }
 
+func (r *RawSpace) IsHidden() bool {
+	return r.Tags.Contains("HIDDEN")
+}
+
 func (s *Space) Update(r RawSpace) {
 	logger := s.conversation.logger.WithField("func", "Update").WithField("rawSpace", r)
 	// Team ?
