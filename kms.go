@@ -8,6 +8,7 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -325,6 +326,19 @@ func (k *KMS) NewResourceCreateMessage(keys ...*jose.JSONWebKey) (string, error)
 
 	for _, v := range keys {
 		kmsRequest.KeyUris = append(kmsRequest.KeyUris, v.KeyID)
+	}
+
+	kmsRequest.Client.ClientId = k.device.Url
+	kmsRequest.Client.Credential.UserId = k.device.UserID
+	kmsRequest.Client.Credential.Bearer = k.device.Token
+
+	return kmsRequest.Encrypt(k.ephemeralKey)
+}
+
+func (k *KMS) NewDeleteAuthorizationMessage(keyUrl string, personId string) (string, error) {
+	kmsRequest := KmsRequest{
+		URI:    fmt.Sprintf("%s/authorizations?authId=%s", keyUrl, personId),
+		Method: "delete",
 	}
 
 	kmsRequest.Client.ClientId = k.device.Url

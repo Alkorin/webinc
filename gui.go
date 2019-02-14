@@ -284,6 +284,9 @@ func (gui *GoCUI) sendMessage(msg string) {
 				}
 			}
 		}
+		if msg[1:] == "leave" {
+			gui.conversation.LeaveSpace(gui.spacesList[gui.currentSpaceIndex].Space)
+		}
 		if strings.HasPrefix(msg[1:], "create ") {
 			gui.conversation.CreateSpace(msg[8:])
 		}
@@ -405,6 +408,7 @@ func (gui *GoCUI) layout(g *gocui.Gui) error {
 		fmt.Fprintln(v, "")
 		fmt.Fprintln(v, "List of commands:")
 		fmt.Fprintln(v, " \033[32m/create name \033[0mCreate a new space with name \033[32mname\033[0m")
+		fmt.Fprintln(v, " \033[32m/leave       \033[0mLeave the current space")
 		fmt.Fprintln(v, " \033[32m/help        \033[0mDisplay this help")
 		fmt.Fprintln(v, " \033[32m/win number  \033[0mJump to space with number \033[32mnumber\033[0m")
 		fmt.Fprintln(v, " \033[32m/win name    \033[0mJump to space with name contains \033[32mname\033[0m")
@@ -413,6 +417,7 @@ func (gui *GoCUI) layout(g *gocui.Gui) error {
 		fmt.Fprintln(v, "List of keyboard shortcuts:")
 		fmt.Fprintln(v, " \033[32m^P    \033[0mPrevious space")
 		fmt.Fprintln(v, " \033[32m^N    \033[0mNext space")
+		fmt.Fprintln(v, " \033[32m^W    \033[0mLeave the current space")
 		fmt.Fprintln(v, " \033[32m^C    \033[0mQuit the application")
 		fmt.Fprintln(v, " \033[32m^A    \033[0mGo to the beginning of line")
 		fmt.Fprintln(v, " \033[32m^E    \033[0mGo to the end of line")

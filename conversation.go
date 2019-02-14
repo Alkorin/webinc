@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/gofrs/uuid"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 )
@@ -256,6 +257,7 @@ func (c *Conversation) AddSpace(r RawSpace) (*Space, error) {
 		Id:                   r.Id,
 		Tags:                 r.Tags,
 		LastSeenActivityDate: r.LastSeenActivityDate,
+		KmsResourceObjectUrl: r.KmsResourceObjectUrl,
 
 		conversation:  c,
 		activitiesMap: make(map[string]*Activity),
@@ -481,4 +483,100 @@ func (c *Conversation) CreateSpace(name string) {
 		logger.Errorf("Failed to request ace creation: %s", responseError)
 		return
 	}
+}
+
+func (c *Conversation) LeaveSpace(space *Space) {
+	logger := c.logger.WithField("func", "LeaveSpace").WithField("spaceId", space.Id)
+
+	if space.IsOneOnOne() {
+		c.leaveOneOnOne(space)
+		return
+	}
+
+	// Create a KMS request
+	kmsMessage, err := c.kms.NewDeleteAuthorizationMessage(space.KmsResourceObjectUrl, c.device.UserID)
+	if err != nil {
+		logger.WithError(err).Error("Failed to create new Delete Authorization KMS message")
+		return
+	}
+
+	activity := struct {
+		ClientTempId string `json:"clientTempId"`
+		ObjectType   string `json:"objectType"`
+		Object       struct {
+			Id         string `json:"id"`
+			ObjectType string `json:"objectType"`
+		} `json:"object"`
+		Actor struct {
+			Id         string `json:"id"`
+			ObjectType string `json:"objectType"`
+		}
+		Target struct {
+			Id         string `json:"id"`
+			ObjectType string `json:"objectType"`
+		} `json:"target"`
+		Verb       string `json:"verb"`
+		KmsMessage string `json:"kmsMessage"`
+	}{
+		ClientTempId: uuid.Must(uuid.NewV4()).String(),
+		ObjectType:   "activity",
+		Verb:         "leave",
+		KmsMessage:   kmsMessage,
+	}
+	activity.Actor.Id = space.Id
+	activity.Actor.ObjectType = "conversation"
+	activity.Object.Id = c.device.UserID
+	activity.Object.ObjectType = "person"
+	activity.Target.Id = space.Id
+	activity.Target.ObjectType = "conversation"
+
+	data, err := json.Marshal(activity)
+	if err != nil {
+		c.logger.WithError(err).Error("Failed to marshal activity")
+		return
+	}
+
+	logger.Trace("Send leave activity")
+	c.activityQueue <- bytes.NewReader(data)
+	return
+}
+
+func (c *Conversation) leaveOneOnOne(space *Space) {
+	logger := c.logger.WithField("func", "LeaveOneOnOneSpace").WithField("spaceId", space.Id)
+
+	if !space.IsOneOnOne() {
+		return
+	}
+
+	activity := struct {
+		ClientTempId string `json:"clientTempId"`
+		ObjectType   string `json:"objectType"`
+		Object       struct {
+			Id         string `json:"id"`
+			ObjectType string `json:"objectType"`
+		} `json:"object"`
+		Actor struct {
+			Id         string `json:"id"`
+			ObjectType string `json:"objectType"`
+		}
+		Verb string `json:"verb"`
+	}{
+		ClientTempId: uuid.Must(uuid.NewV4()).String(),
+		ObjectType:   "activity",
+		Verb:         "hide",
+	}
+	activity.Actor.Id = c.device.UserID
+	activity.Actor.ObjectType = "person"
+	activity.Object.Id = space.Id
+	activity.Object.ObjectType = "conversation"
+
+	data, err := json.Marshal(activity)
+	if err != nil {
+		c.logger.WithError(err).Error("Failed to marshal activity")
+		return
+	}
+
+	logger.Trace("Send leave activity")
+	c.activityQueue <- bytes.NewReader(data)
+	return
 }
