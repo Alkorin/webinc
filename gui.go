@@ -72,6 +72,14 @@ func NewGoCUI(c *Conversation) (*GoCUI, error) {
 	return gui, nil
 }
 
+func (gui *GoCUI) IsCurrentSpace(id string) bool {
+	if gui.currentSpaceIndex == -1 {
+		return false
+	}
+	return gui.spacesList[gui.currentSpaceIndex].Id == id
+
+}
+
 func (gui *GoCUI) Start() error {
 	if err := gui.MainLoop(); err != nil && err != gocui.ErrQuit {
 		return err
@@ -124,7 +132,7 @@ func (gui *GoCUI) NewActivityHandler(s *Space, a *Activity) {
 		if ok {
 			gui.moveToSpace(spaceIndex)
 		}
-	} else if a.Verb == "acknowledge" && gui.spacesList[gui.currentSpaceIndex].Id != a.Target.Id {
+	} else if a.Verb == "acknowledge" && !gui.IsCurrentSpace(a.Target.Id) {
 		gui.updateSpaceList()
 	} else if a.Verb == "post" || a.Verb == "share" {
 		spaceIndex := gui.spacesMap[s.Id]
@@ -284,14 +292,14 @@ func (gui *GoCUI) sendMessage(msg string) {
 				}
 			}
 		}
-		if msg[1:] == "leave" {
+		if msg[1:] == "leave" && gui.currentSpaceIndex != -1 {
 			gui.conversation.LeaveSpace(gui.spacesList[gui.currentSpaceIndex].Space)
 		}
 		if strings.HasPrefix(msg[1:], "create ") {
 			gui.conversation.CreateSpace(msg[8:])
 		}
 		// Unknown command
-	} else {
+	} else if gui.currentSpaceIndex != -1 {
 		gui.spacesList[gui.currentSpaceIndex].SendMessage(msg)
 	}
 }
@@ -374,20 +382,21 @@ func (gui *GoCUI) updateSpaceStatus() {
 		v, _ := g.View("spaceStatus")
 		v.Clear()
 
-		space := gui.spacesList[gui.currentSpaceIndex]
+		if gui.currentSpaceIndex != -1 {
+			space := gui.spacesList[gui.currentSpaceIndex]
 
-		fmt.Fprintf(v, "[%s]", space.DisplayName())
+			fmt.Fprintf(v, "[%s]", space.DisplayName())
 
-		msgView, _ := g.View("messages")
-		if !msgView.Autoscroll {
-			_, viewHeight := msgView.Size()
-			_, oy := msgView.Origin()
-			nbLines := len(msgView.ViewBufferLines())
+			msgView, _ := g.View("messages")
+			if !msgView.Autoscroll {
+				_, viewHeight := msgView.Size()
+				_, oy := msgView.Origin()
+				nbLines := len(msgView.ViewBufferLines())
 
-			moreLines := nbLines - viewHeight - oy
-			fmt.Fprintf(v, " -MORE(%d)-", moreLines)
+				moreLines := nbLines - viewHeight - oy
+				fmt.Fprintf(v, " -MORE(%d)-", moreLines)
+			}
 		}
-
 		return nil
 	})
 }
