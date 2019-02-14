@@ -211,7 +211,7 @@ func (c *Conversation) FetchAllSpaces() {
 
 	for _, space := range r.Items {
 		logger := logger.WithField("rawSpace", space)
-		if space.Tags.Contains("HIDDEN") {
+		if space.IsHidden() {
 			continue
 		}
 
