@@ -28,6 +28,7 @@ type Space struct {
 	Id                           string
 	EncryptionKey                *jose.JSONWebKey
 	DefaultActivityEncryptionKey *jose.JSONWebKey
+	KmsResourceObjectUrl         string
 	DisplayName                  string
 	Participants                 []string
 	Tags                         SpaceTags
@@ -46,6 +47,7 @@ type RawSpace struct {
 	DisplayName                     string
 	EncryptionKeyUrl                string
 	DefaultActivityEncryptionKeyUrl string
+	KmsResourceObjectUrl            string
 	Tags                            SpaceTags
 
 	Participants struct {
@@ -64,6 +66,10 @@ type RawSpace struct {
 	}
 
 	LastSeenActivityDate time.Time
+}
+
+func (s *Space) IsOneOnOne() bool {
+	return s.Tags.Contains("ONE_ON_ONE")
 }
 
 func (s *Space) Update(r RawSpace) {
