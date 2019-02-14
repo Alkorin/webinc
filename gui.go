@@ -163,6 +163,9 @@ func (gui *GoCUI) keybindings(g *gocui.Gui) error {
 	if err := g.SetKeybinding("", gocui.KeyCtrlP, gocui.ModNone, gui.previousSpace); err != nil {
 		return err
 	}
+	if err := g.SetKeybinding("", gocui.KeyCtrlW, gocui.ModNone, func(*gocui.Gui, *gocui.View) error { gui.leaveCurrentSpace(); return nil }); err != nil {
+		return err
+	}
 	if err := g.SetKeybinding("help", gocui.KeyEnter, gocui.ModNone, func(*gocui.Gui, *gocui.View) error { return gui.hideHelp() }); err != nil {
 		return err
 	}
@@ -224,6 +227,12 @@ func (gui *GoCUI) showHelp() error {
 	gui.SetCurrentView("help")
 	gui.Cursor = false
 	return nil
+}
+
+func (gui *GoCUI) leaveCurrentSpace() {
+	if gui.currentSpaceIndex != -1 {
+		gui.conversation.LeaveSpace(gui.spacesList[gui.currentSpaceIndex].Space)
+	}
 }
 
 func (gui *GoCUI) moveToSpace(i int) {
@@ -292,8 +301,8 @@ func (gui *GoCUI) sendMessage(msg string) {
 				}
 			}
 		}
-		if msg[1:] == "leave" && gui.currentSpaceIndex != -1 {
-			gui.conversation.LeaveSpace(gui.spacesList[gui.currentSpaceIndex].Space)
+		if msg[1:] == "leave" {
+			gui.leaveCurrentSpace()
 		}
 		if strings.HasPrefix(msg[1:], "create ") {
 			gui.conversation.CreateSpace(msg[8:])
