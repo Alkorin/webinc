@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jroimartin/gocui"
+	"github.com/Alkorin/gocui"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -60,6 +60,11 @@ func NewGoCUI(c *Conversation) (*GoCUI, error) {
 	}
 	gui.Cursor = true
 	gui.SetManagerFunc(gui.layout)
+	gui.SetResizeFunc(func(g *gocui.Gui, x, y int) error {
+		// Update messages if size changed
+		gui.updateMessages()
+		return nil
+	})
 
 	if err := gui.keybindings(gui.Gui); err != nil {
 		return nil, err
@@ -356,7 +361,22 @@ func (gui *GoCUI) updateMessages() {
 
 		hasPrintNewMessagesSeparator := false
 
-		if len(gui.spacesList) != 0 {
+		if gui.currentSpaceIndex == -1 {
+			fmt.Fprintln(v, "")
+			fmt.Fprintln(v, "")
+
+			width, _ := v.Size()
+
+			for _, l := range logo {
+				fmt.Fprint(v, strings.Repeat(" ", (width-len(l))/2))
+				fmt.Fprintln(v, l)
+			}
+
+			fmt.Fprintln(v, "")
+			l := fmt.Sprintf("WebInC - Webex Teams in Console - %s", buildVersion)
+			fmt.Fprint(v, strings.Repeat(" ", (width-len(l))/2))
+			fmt.Fprintln(v, l)
+		} else {
 			space := gui.spacesList[gui.currentSpaceIndex]
 			for _, a := range space.Activities {
 				if a.Published.After(gui.currentSpaceNewMessagesSeparatorTime) && !hasPrintNewMessagesSeparator {
@@ -451,20 +471,6 @@ func (gui *GoCUI) layout(g *gocui.Gui) error {
 		v.Wrap = true
 		v.Autoscroll = true
 		v.Frame = false
-		fmt.Fprintln(v, "")
-		fmt.Fprintln(v, "")
-
-		width, _ := v.Size()
-
-		for _, l := range logo {
-			fmt.Fprint(v, strings.Repeat(" ", (width-len(l))/2))
-			fmt.Fprintln(v, l)
-		}
-
-		fmt.Fprintln(v, "")
-		l := fmt.Sprintf("WebInC - Webex Teams in Console - %s", buildVersion)
-		fmt.Fprint(v, strings.Repeat(" ", (width-len(l))/2))
-		fmt.Fprintln(v, l)
 	}
 	if v, err := g.SetView("spaceStatus", 25, maxY-3, maxX, maxY-1); err != nil {
 		if err != gocui.ErrUnknownView {

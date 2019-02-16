@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/jroimartin/gocui"
+	"github.com/Alkorin/gocui"
 )
 
 type HistoryEditor struct {
