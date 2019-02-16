@@ -99,10 +99,7 @@ func NewDevice(config *Config) (*Device, error) {
 	}
 
 	if response.StatusCode == http.StatusUnauthorized {
-		// Token is incorrect
-		config.SetString("auth-token", "")
-		config.Save()
-		return nil, errors.New("token is invalid, please retry")
+		return nil, ErrInvalidToken
 	}
 
 	if response.StatusCode != http.StatusOK {

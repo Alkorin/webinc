@@ -4,6 +4,7 @@ import (
 	"os"
 	"runtime/debug"
 
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -45,32 +46,11 @@ func main() {
 		log.SetLevel(log.InfoLevel)
 	}
 
-	// Register Device
-	log.Debug("Registering device...")
-	device, err := NewDevice(config)
+	// Try to start backend
+	c, err := StartBackendWithRetry(config)
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Debug("Done")
-
-	// Start Mercury Service
-	log.Debug("Connecting to Mercury...")
-	mercury, err := NewMercury(device)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Debug("Done")
-
-	// Start KMS Service
-	log.Debug("Connecting to KMS...")
-	kms, err := NewKMS(device, mercury)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Debug("Done")
-
-	// Message Handler
-	c := NewConversation(device, mercury, kms)
 
 	// Start GUI
 	g, err := NewGoCUI(c)
@@ -79,4 +59,56 @@ func main() {
 	}
 
 	g.Start()
+
+}
+
+func StartBackendWithRetry(config *Config) (*Conversation, error) {
+	for i := 0; i < 5; i++ {
+		c, err := StartBackend(config)
+		if err == ErrInvalidToken {
+			log.Error("Token is invalid")
+			config.SetString("auth-token", "")
+			config.Save()
+			continue
+		} else if err == ErrInvalidDevice {
+			log.Error("Device seems invalid")
+			config.SetString("device-url", "")
+			config.Save()
+			continue
+		}
+		return c, err
+	}
+
+	return nil, errors.New("Too many retry to start backend, fail")
+}
+
+func StartBackend(config *Config) (*Conversation, error) {
+	// Register Device
+	log.Debug("Registering device...")
+	device, err := NewDevice(config)
+	if err != nil {
+		return nil, err
+	}
+	log.Debug("Done")
+
+	// Start Mercury Service
+	log.Debug("Connecting to Mercury...")
+	mercury, err := NewMercury(device)
+	if err != nil {
+		return nil, err
+	}
+	log.Debug("Done")
+
+	// Start KMS Service
+	log.Debug("Connecting to KMS...")
+	kms, err := NewKMS(device, mercury)
+	if err != nil {
+		return nil, err
+	}
+	log.Debug("Done")
+
+	// Message Handler
+	c := NewConversation(device, mercury, kms)
+
+	return c, nil
 }
