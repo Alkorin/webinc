@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"net/http"
 
 	"github.com/gofrs/uuid"
 	"github.com/gorilla/websocket"
@@ -23,9 +24,14 @@ func NewMercury(device *Device) (*Mercury, error) {
 		logger:   log.WithField("type", "Mercury"),
 	}
 
+	logger := mercury.logger.WithField("websocketUrl", device.WebSocketUrl)
+
 	conn, resp, err := websocket.DefaultDialer.Dial(device.WebSocketUrl, nil)
 	if err != nil {
-		mercury.logger.WithField("websocketResponse", resp).Trace("Failed to dial WS")
+		logger.WithField("websocketResponse", resp).Error("Failed to dial WS")
+		if resp != nil && resp.StatusCode == http.StatusNotFound {
+			return nil, ErrInvalidDevice
+		}
 		return nil, errors.Wrap(err, "failed to connect to mercury service")
 	}
 
@@ -39,7 +45,7 @@ func NewMercury(device *Device) (*Mercury, error) {
 		return nil, errors.Wrap(err, "failed to marshal mercury auth request")
 	}
 
-	mercury.logger.Trace("Sending Auth Request...")
+	logger.Trace("Sending Auth Request...")
 	err = conn.WriteMessage(websocket.TextMessage, authRequestData)
 	if err != nil {
 		panic(err)
@@ -48,12 +54,12 @@ func NewMercury(device *Device) (*Mercury, error) {
 	// Start Mercury Goroutine
 	go func() {
 		for {
-			mercury.logger.Trace("Waiting msgs...")
+			logger.Trace("Waiting msgs...")
 			_, msg, err := conn.ReadMessage()
 			if err != nil {
 				panic(err)
 			}
-			logger := mercury.logger.WithField("message", string(msg))
+			logger := logger.WithField("message", string(msg))
 			logger.Trace("Message received")
 
 			var mercuryMessage MercuryMessage
