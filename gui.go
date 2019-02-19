@@ -388,11 +388,11 @@ func (gui *GoCUI) updateMessages() {
 					fmt.Fprint(v, strings.Repeat("-", width-len(separator)-(width-len(separator))/2))
 				}
 				if a.Verb == "post" {
-					fmt.Fprintf(v, "%s %s> %s\n", a.Published.Format("15:04:05"), a.Actor.DisplayName, a.Object.DisplayName)
+					fmt.Fprintf(v, "%s %s> %s\n", gui.activityDisplayDate(a), a.Actor.DisplayName, a.Object.DisplayName)
 				} else if a.Verb == "share" {
-					fmt.Fprintf(v, "%s %s has shared a content of type %q\n", a.Published.Format("15:04:05"), a.Actor.DisplayName, a.Object.ContentCategory)
+					fmt.Fprintf(v, "%s %s has shared a content of type %q\n", gui.activityDisplayDate(a), a.Actor.DisplayName, a.Object.ContentCategory)
 					if a.Object.DisplayName != "" {
-						fmt.Fprintf(v, "%s %s> %s\n", a.Published.Format("15:04:05"), a.Actor.DisplayName, a.Object.DisplayName)
+						fmt.Fprintf(v, "%s %s> %s\n", gui.activityDisplayDate(a), a.Actor.DisplayName, a.Object.DisplayName)
 					}
 				}
 			}
@@ -401,6 +401,14 @@ func (gui *GoCUI) updateMessages() {
 		return nil
 	})
 
+}
+
+func (gui *GoCUI) activityDisplayDate(a *Activity) string {
+	now := time.Now()
+	if a.Published.Year() == now.Year() && a.Published.YearDay() == now.YearDay() {
+		return a.Published.Format("15:04:05")
+	}
+	return a.Published.Format("2006-01-02 15:04:05")
 }
 
 func (gui *GoCUI) updateSpaceStatus() {
