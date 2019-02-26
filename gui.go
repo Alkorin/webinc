@@ -378,17 +378,29 @@ func (gui *GoCUI) updateMessages() {
 			fmt.Fprintln(v, l)
 		} else {
 			space := gui.spacesList[gui.currentSpaceIndex]
+			width, _ := v.Size()
 			for _, a := range space.Activities {
 				if a.Published.After(gui.currentSpaceNewMessagesSeparatorTime) && !hasPrintNewMessagesSeparator {
 					hasPrintNewMessagesSeparator = true
 					separator := " New messages "
-					width, _ := v.Size()
 					fmt.Fprint(v, strings.Repeat("-", (width-len(separator))/2))
 					fmt.Fprint(v, separator)
 					fmt.Fprint(v, strings.Repeat("-", width-len(separator)-(width-len(separator))/2))
 				}
 				if a.Verb == "post" {
-					fmt.Fprintf(v, "%s %s> %s\n", gui.activityDisplayDate(a), a.Actor.DisplayName, a.Object.DisplayName)
+					header := fmt.Sprintf("%s %s>", gui.activityDisplayDate(a), a.Actor.DisplayName)
+					headerSpace := strings.Repeat(" ", len([]rune(header)))
+					remainingSpace := width - len(header) - 1
+					// Wrap text if needed
+					var lines []string
+					for _, v := range strings.Split(a.Object.DisplayName, "\n") {
+						lines = append(lines, wrap(v, remainingSpace)...)
+					}
+					// Display it
+					fmt.Fprintf(v, "%s %s\n", header, lines[0])
+					for _, l := range lines[1:] {
+						fmt.Fprintf(v, "%s %s\n", headerSpace, l)
+					}
 				} else if a.Verb == "share" {
 					fmt.Fprintf(v, "%s %s has shared a content of type %q\n", gui.activityDisplayDate(a), a.Actor.DisplayName, a.Object.ContentCategory)
 					if a.Object.DisplayName != "" {
@@ -476,7 +488,6 @@ func (gui *GoCUI) layout(g *gocui.Gui) error {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
-		v.Wrap = true
 		v.Autoscroll = true
 		v.Frame = false
 	}
@@ -484,7 +495,6 @@ func (gui *GoCUI) layout(g *gocui.Gui) error {
 		if err != gocui.ErrUnknownView {
 			return err
 		}
-		v.Wrap = true
 		v.Frame = false
 		v.BgColor = gocui.ColorBlue
 	}
@@ -501,4 +511,23 @@ func (gui *GoCUI) layout(g *gocui.Gui) error {
 	}
 
 	return nil
+}
+
+func wrap(s string, length int) []string {
+	lines := []string{}
+
+	for len(s) > length {
+		i := strings.LastIndexAny(s[:length+1], " -")
+		if i < 0 {
+			i = length
+		}
+		lines = append(lines, s[:i])
+		s = s[i+1:]
+	}
+
+	if len(s) != 0 {
+		lines = append(lines, s)
+	}
+
+	return lines
 }
