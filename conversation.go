@@ -215,11 +215,12 @@ func (c *Conversation) FetchAllSpaces() {
 			continue
 		}
 
-		_, err := c.AddSpace(space)
-		if err != nil {
-			logger.WithError(err).Error("Failed to add space")
-			continue
-		}
+		go func(r RawSpace) {
+			_, err := c.AddSpace(r)
+			if err != nil {
+				logger.WithError(err).Error("Failed to add space")
+			}
+		}(space)
 	}
 }
 
