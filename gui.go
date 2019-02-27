@@ -385,7 +385,7 @@ func (gui *GoCUI) updateMessages() {
 					separator := " New messages "
 					fmt.Fprint(v, strings.Repeat("-", (width-len(separator))/2))
 					fmt.Fprint(v, separator)
-					fmt.Fprint(v, strings.Repeat("-", width-len(separator)-(width-len(separator))/2))
+					fmt.Fprintln(v, strings.Repeat("-", width-len(separator)-(width-len(separator))/2))
 				}
 				if a.Verb == "post" {
 					header := fmt.Sprintf("%s %s>", gui.activityDisplayDate(a), a.Actor.DisplayName)
