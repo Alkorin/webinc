@@ -20,30 +20,10 @@ type Config struct {
 	config         map[string]interface{}
 }
 
-func getHomeDir() string {
-	// Try to find HOME folder
-	if home := os.Getenv("HOME"); home != "" {
-		return home
-	}
-
-	if home := os.Getenv("USERPROFILE"); home != "" {
-		return home
-	}
-
-	drive := os.Getenv("HOMEDRIVE")
-	path := os.Getenv("HOMEPATH")
-
-	if drive != "" && path != "" {
-		return drive + path
-	}
-
-	return ""
-}
-
 func NewConfig() (*Config, error) {
 	// Search TOML configuration
-	homeDir := getHomeDir()
-	if homeDir == "" {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
 		log.Info("Failed to locate HOME folder, defaulting to CWD")
 	}
 
